@@ -2,8 +2,9 @@ package queue
 
 import (
 	"context"
-	"data_proxy/queue/rateio"
 	"time"
+
+	"github.com/jmuyuyang/queue_proxy/rateio"
 
 	seelog "github.com/cihub/seelog"
 )
