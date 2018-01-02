@@ -4,6 +4,11 @@
 - 支持disk queue做队列消息发送灾备,保证消息不丢失
 - 支持队列级别限速
 
+### 安装使用
+```
+  go get github.com/jmuyuyang/queue_proxy
+```
+
 ### 配置说明
 ```
   type: kafka
@@ -25,7 +30,7 @@
 
 ### 使用说明
 ```
-    import queue "git.huanleguang.com/hlg/queue_sender"
+    import queue "github.com/jmuyuyang/queue_proxy"
     val config queue.QueueConfig
     yaml.Unmarshal([]byte(config), &config)
     queue.NewQueueSender(config)
