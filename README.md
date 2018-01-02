@@ -34,8 +34,8 @@
     val config queue.QueueConfig
     yaml.Unmarshal([]byte(config), &config)
     queue.NewQueueSender(config)
-	queue.SetQueueType("kafka")
-	queue.SetTopic(topicName)
+    queue.SetQueueType("kafka")
+    queue.SetTopic(topicName)
     queue.StartBackend(ctx)
 
     queue.SendMessage(dateByte)
