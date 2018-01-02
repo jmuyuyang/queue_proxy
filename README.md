@@ -36,6 +36,6 @@
     queue.NewQueueSender(config)
     queue.StartBackend(ctx)
 
-	queue.SendMessage(dateByte)
-	queue.SetRateLimit(ratePerSecond) //限制限流(每秒流速)
+    queue.SendMessage(dateByte)
+    queue.SetRateLimit(ratePerSecond) //限制限流(每秒流速)
 ```
