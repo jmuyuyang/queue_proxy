@@ -1,4 +1,4 @@
-## queueSender
+## queue_proxy
 
 - 支持redis/kafka多种队列配置,统一发送方式
 - 支持disk queue做队列消息发送灾备,保证消息不丢失
