@@ -70,6 +70,14 @@ func (t *QueueProducerObject) createDiskQueue() (*DiskQueue, error) {
 }
 
 /**
+* 设置队列类型
+ */
+func (t *QueueProducerObject) SetQueueType(queueType string) {
+	t.config.Type = queueType
+	t.queue = CreateQueueProducer(t.config)
+}
+
+/**
 * 设置publish 主题
  */
 func (t *QueueProducerObject) SetTopic(topicName string) {
