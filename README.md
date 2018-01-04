@@ -16,12 +16,10 @@
     bind: 127.0.0.1:6379
     timeout: 3
     size: 5 //连接池长度
-    topic: "logstash"
   kafka:
     bind: 172.16.2.216:9092
     timeout: 20
     size: 5 //连接池长度
-    topic: "logstash"
   disk:
     path: "./data"
     prefix: "logcenter-proxy"
@@ -33,9 +31,8 @@
     import queue "github.com/jmuyuyang/queue_proxy"
     val config queue.QueueConfig
     yaml.Unmarshal([]byte(config), &config)
-    queue.NewQueueSender(config)
+    queue.NewQueueProducer(topicName, config)
     queue.SetQueueType("kafka")
-    queue.SetTopic(topicName)
     queue.StartBackend(ctx)
 
     queue.SendMessage(dateByte)
