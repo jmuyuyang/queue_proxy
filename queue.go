@@ -107,14 +107,15 @@ func (t *QueueProducerObject) DisableRateLimit() {
 /**
 * 发送消息
  */
-func (sd *QueueProducerObject) SendMessage(data []byte) bool {
+func (sd *QueueProducerObject) SendMessage(data []byte) error {
 	addBackendStore := false
+	var err error
 	if sd.queue != nil && sd.queue.IsActive() {
 		if sd.rateController != nil && !sd.rateController.Assign(false) {
 			//超过限速
 			addBackendStore = true
 		} else {
-			err := sd.queue.SendMessage(data)
+			err = sd.queue.SendMessage(data)
 			if err != nil {
 				//触发队列检测
 				sd.checkQueueChan <- 1
@@ -129,10 +130,8 @@ func (sd *QueueProducerObject) SendMessage(data []byte) bool {
 		if sd.backend != nil {
 			sd.backend.WriteChan <- data
 		}
-		return false
-	} else {
-		return true
 	}
+	return err
 }
 
 func (sd *QueueProducerObject) StartBackend(ctx context.Context) {
