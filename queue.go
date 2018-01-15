@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jmuyuyang/queue_proxy/disk"
 	"github.com/jmuyuyang/queue_proxy/rateio"
 
 	seelog "github.com/cihub/seelog"
@@ -28,17 +29,17 @@ type PipelineQueueProducer interface {
 }
 
 type QueueConfig struct {
-	Type  string      `yaml:"type"`
-	Redis RedisConfig `yaml:"redis"`
-	Kafka KafkaConfig `yaml:"kafka"`
-	Disk  DiskConfig  `yaml:"disk"`
+	Type  string          `yaml:"type"`
+	Redis RedisConfig     `yaml:"redis"`
+	Kafka KafkaConfig     `yaml:"kafka"`
+	Disk  disk.DiskConfig `yaml:"disk"`
 }
 
 type QueueProducerObject struct {
 	topic          string
 	config         QueueConfig
 	queue          QueueProducer
-	backend        *DiskQueue
+	backend        *disk.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
 }
@@ -65,9 +66,9 @@ func NewQueueProducer(topicName string, config QueueConfig, logger seelog.Logger
 	return senderObj
 }
 
-func (t *QueueProducerObject) createDiskQueue() (*DiskQueue, error) {
+func (t *QueueProducerObject) createDiskQueue() (*disk.DiskQueue, error) {
 	diskQueueName := t.config.Disk.Prefix + "-" + t.topic
-	return NewDiskQueue(diskQueueName, t.config.Disk.Path, time.Duration(t.config.Disk.FlushTimeout))
+	return disk.NewDiskQueue(diskQueueName, t.config.Disk.Path, time.Duration(t.config.Disk.FlushTimeout))
 }
 
 /**
