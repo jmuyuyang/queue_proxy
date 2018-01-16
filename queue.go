@@ -42,6 +42,7 @@ type QueueProducerObject struct {
 	backend        *disk.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
+	exitChan       chan int
 }
 
 func NewQueueProducer(topicName string, config QueueConfig, logger seelog.LoggerInterface) *QueueProducerObject {
@@ -50,6 +51,7 @@ func NewQueueProducer(topicName string, config QueueConfig, logger seelog.Logger
 		config:         config,
 		queue:          CreateQueueProducer(config),
 		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
+		exitChan:       make(chan int),
 	}
 	if config.Disk.Path != "" {
 		diskQueue, err := senderObj.createDiskQueue()
@@ -135,7 +137,7 @@ func (sd *QueueProducerObject) SendMessage(data []byte) error {
 	return err
 }
 
-func (sd *QueueProducerObject) StartBackend(ctx context.Context) {
+func (sd *QueueProducerObject) StartBackend() {
 	if sd.backend == nil {
 		return
 	}
@@ -184,7 +186,7 @@ func (sd *QueueProducerObject) StartBackend(ctx context.Context) {
 				}
 				r = nil
 			}
-		case <-ctx.Done():
+		case <-sd.exitChan:
 			if pipelineQueue != nil {
 				pipelineQueue.Close()
 			}
@@ -198,6 +200,7 @@ exit:
 * 停止队列sender运行
  */
 func (sd *QueueProducerObject) Stop() {
+	close(sd.exitChan)
 	sd.backend.Stop()
 }
 
