@@ -34,8 +34,9 @@
     yaml.Unmarshal([]byte(config), &config)
     queue.NewQueueProducer(topicName, config)
     queue.SetQueueType("kafka")
-    queue.StartBackend(ctx)
+    queue.StartBackend()
 
     queue.SendMessage(dateByte)
     queue.SetRateLimit(ratePerSecond) //限制限流(每秒流速)
+    queue.Stop()
 ```

@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"context"
 	"time"
 
 	"github.com/jmuyuyang/queue_proxy/disk"
