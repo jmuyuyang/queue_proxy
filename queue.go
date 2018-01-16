@@ -68,7 +68,7 @@ func NewQueueProducer(topicName string, config QueueConfig, logger seelog.Logger
 
 func (t *QueueProducerObject) createDiskQueue() (*disk.DiskQueue, error) {
 	diskQueueName := t.config.Disk.Prefix + "-" + t.topic
-	return disk.NewDiskQueue(diskQueueName, t.config.Disk.Path, time.Duration(t.config.Disk.FlushTimeout))
+	return disk.NewDiskQueue(diskQueueName, t.config.Disk)
 }
 
 /**

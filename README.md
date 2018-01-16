@@ -2,7 +2,7 @@
 
 - 支持redis/kafka多种队列配置,统一发送方式
 - 支持disk queue做队列消息发送灾备,避免消息丢失
-- 支持队列级别限速
+- 支持队列级别限速,本地队列支持数据压缩
 
 ### 安装使用
 ```
@@ -24,6 +24,7 @@
     path: "./data"
     prefix: "logcenter-proxy"
     flush_timeout: 2
+    compress_type: "gzip" //文件压缩方式
 ```
 
 ### 使用说明

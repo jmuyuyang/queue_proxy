@@ -12,14 +12,21 @@ import (
 	"time"
 
 	seelog "github.com/cihub/seelog"
+	"github.com/jmuyuyang/queue_proxy/compressor"
 )
 
-const MaxBytesPerFile = 2 * 1024 * 1024 * 1024
+const MaxBytesPerFile = 2 * 1024 * 1024
 
 type DiskConfig struct {
 	Path         string `yaml:"path"`
 	Prefix       string `yaml:"prefix"`
 	FlushTimeout int    `yaml:"flush_timeout"`
+	CompressType string `yaml:"compress_type"`
+}
+
+type Compressor interface {
+	Compress(string, bool) error
+	Decompress(string, bool) error
 }
 
 type DiskQueue struct {
@@ -42,10 +49,11 @@ type DiskQueue struct {
 	dataPath        string
 	syncTimeout     time.Duration
 	needSync        bool
+	compressor      Compressor
 	logger          seelog.LoggerInterface
 }
 
-func NewDiskQueue(name string, dataPath string, syncTimeout time.Duration) (*DiskQueue, error) {
+func NewDiskQueue(name string, cfg DiskConfig) (*DiskQueue, error) {
 	d := DiskQueue{
 		WriteChan:       make(chan []byte),
 		ReadChan:        make(chan []byte),
@@ -56,9 +64,13 @@ func NewDiskQueue(name string, dataPath string, syncTimeout time.Duration) (*Dis
 		writePos:        0,
 		maxBytesPerFile: MaxBytesPerFile,
 		name:            name,
-		dataPath:        dataPath,
-		syncTimeout:     syncTimeout * time.Second,
+		dataPath:        cfg.Path,
+		syncTimeout:     time.Duration(cfg.FlushTimeout) * time.Second,
 		needSync:        false,
+	}
+	switch cfg.CompressType {
+	case "gzip":
+		d.compressor = &compressor.GzipCompressor{}
 	}
 	err := d.createDataPath()
 	if err != nil {
@@ -116,6 +128,7 @@ func (d *DiskQueue) ioLoop() {
 					d.logError(err)
 					continue
 				}
+				r = d.ReadChan
 			}
 			r = d.ReadChan
 		} else {
@@ -162,6 +175,15 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 		curFileName := d.fileName(d.readFileNum)
 		d.readFile, err = os.OpenFile(curFileName, os.O_RDONLY, 0600)
 		if err != nil {
+			if os.IsNotExist(err) {
+				//如果readFile文件不存在,则尝试一次解压缩
+				if d.compressor != nil {
+					err = d.compressor.Decompress(curFileName, true)
+					if err == nil {
+						d.readFile, err = os.OpenFile(curFileName, os.O_RDONLY, 0600)
+					}
+				}
+			}
 			return nil, err
 		}
 
@@ -219,6 +241,16 @@ func (d *DiskQueue) moveForward() {
 		if err != nil {
 			d.logError(err)
 		}
+
+		if d.compressor != nil && d.readFileNum+1 < d.writeFileNum {
+			//写一个文件不是当前写文件则尝试进行解压缩
+			go func(file string) {
+				err := d.compressor.Decompress(file, true)
+				if err != nil {
+					d.logError(err)
+				}
+			}(d.fileName(d.readFileNum + 1))
+		}
 	}
 }
 
@@ -273,6 +305,16 @@ func (d *DiskQueue) writeOne(data []byte) error {
 		if d.writeFile != nil {
 			d.writeFile.Close()
 			d.writeFile = nil
+		}
+
+		if d.compressor != nil && d.writeFileNum-d.readFileNum > 2 {
+			//已写完毕文件数比读文件数大于2则进行文件压缩
+			go func(file string) {
+				err := d.compressor.Compress(file, true)
+				if err != nil {
+					d.logError(err)
+				}
+			}(d.fileName(d.writeFileNum - 1))
 		}
 	}
 	return err
