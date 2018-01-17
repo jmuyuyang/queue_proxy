@@ -143,6 +143,8 @@ func (d *DiskQueue) ioLoop() {
 		case <-syncTicker.C:
 			d.needSync = true
 		case <-d.exitChan:
+			//退出是进行一次meta data同步
+			d.sync()
 			goto exit
 		}
 	}
