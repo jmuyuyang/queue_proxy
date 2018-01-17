@@ -8,7 +8,10 @@ import (
 )
 
 const (
-	DEFAULT_BUFFER_SIZE = 10
+	DEFAULT_BUFFER_SIZE     = 10
+	REDIS_POOL_IDLE_TIMEOUT = 60 * 10
+	REDIS_CONN_READ_TIMEOUT = 30 //读超时10s,用于brpop操作
+	REDIS_POOL_PING_TIMEOUT = 5  //PING超时
 )
 
 type RedisQueue struct {
@@ -54,7 +57,7 @@ func createRedisQueuePool(host string, connTimeout, idleTimeout time.Duration, m
 func NewRedisQueue(config RedisConfig) *RedisQueue {
 	timeout := time.Duration(config.Timeout) * time.Second
 	loggerQueue := &RedisQueue{
-		pool:   createRedisQueuePool(config.Bind, timeout, IDLE_TIMEOUT*time.Second, config.Size),
+		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.Size),
 		config: config,
 		topic:  config.Topic,
 		enable: true,
@@ -94,7 +97,7 @@ func (q *RedisQueue) CheckQueue() bool {
 func (q *RedisQueue) checkConn() bool {
 	conn := q.pool.Get()
 	defer conn.Close()
-	_, err := conn.Do("PING")
+	_, err := rd.DoWithTimeout(conn, time.Duration(REDIS_POOL_PING_TIMEOUT)*time.Second, "PING")
 	if err != nil {
 		return false
 	} else {
@@ -120,11 +123,17 @@ func (q *RedisQueue) checkQueueLen() bool {
 	}
 }
 
-func (q *RedisQueue) SendMessage(log []byte) error {
+func (q *RedisQueue) SendMessage(data []byte) error {
 	conn := q.pool.Get()
 	defer conn.Close()
-	_, err := conn.Do("LPUSH", q.topic, string(log))
+	_, err := conn.Do("LPUSH", q.topic, string(data))
 	return err
+}
+
+func (q *RedisQueue) GetMessage() ([]byte, error) {
+	conn := q.pool.Get()
+	defer conn.Close()
+	return rd.Bytes(conn.Do("LPOP"))
 }
 
 /**

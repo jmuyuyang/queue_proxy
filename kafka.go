@@ -9,6 +9,8 @@ import (
 	"github.com/jolestar/go-commons-pool"
 )
 
+const KAFKA_POOL_IDLE_TIMEOUT = 60 * 10
+
 type KafkaPoolFactory struct {
 	addr    string
 	timeout time.Duration
@@ -74,7 +76,7 @@ func createKafkaQueuePool(config KafkaConfig) *pool.ObjectPool {
 	}
 	cfg := pool.NewDefaultPoolConfig()
 	cfg.MaxIdle = config.Size
-	cfg.MinEvictableIdleTimeMillis = 1000 * IDLE_TIMEOUT //10分钟空闲时间
+	cfg.MinEvictableIdleTimeMillis = 1000 * KAFKA_POOL_IDLE_TIMEOUT //10分钟空闲时间
 	return pool.NewObjectPool(poolFactory, cfg)
 }
 
@@ -102,13 +104,13 @@ func (q *KafkaQueue) CheckQueue() bool {
 	return true
 }
 
-func (q *KafkaQueue) SendMessage(log []byte) error {
+func (q *KafkaQueue) SendMessage(data []byte) error {
 	obj, err := q.pool.BorrowObject()
 	if err != nil {
 		return err
 	}
 	producer := obj.(sarama.SyncProducer)
-	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
+	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(data))}
 	_, _, err = producer.SendMessage(msg)
 	if err != nil {
 		//出错即关闭链接
