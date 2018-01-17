@@ -133,7 +133,7 @@ func (q *RedisQueue) SendMessage(data []byte) error {
 func (q *RedisQueue) GetMessage() ([]byte, error) {
 	conn := q.pool.Get()
 	defer conn.Close()
-	return rd.Bytes(conn.Do("LPOP"))
+	return rd.Bytes(conn.Do("RPOP"))
 }
 
 /**
