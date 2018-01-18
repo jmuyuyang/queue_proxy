@@ -3,35 +3,28 @@ package queue
 import (
 	"time"
 
+	seelog "github.com/cihub/seelog"
+	"github.com/jmuyuyang/queue_proxy/backend"
 	"github.com/jmuyuyang/queue_proxy/disk"
 	"github.com/jmuyuyang/queue_proxy/rateio"
-
-	seelog "github.com/cihub/seelog"
 )
 
-const IDLE_TIMEOUT = 60 * 10
 const CHECK_QUEUE_TIMEOUT = 5 * time.Second
 const CHECK_QUEUE_CHAIN_BUFFER = 3
 
 type QueueProducer interface {
-	StartPipeline() (PipelineQueueProducer, error)
+	StartPipeline() (backend.PipelineQueueProducer, error)
 	SetTopic(string)
 	SendMessage([]byte) error
 	CheckQueue() bool
 	IsActive() bool
 }
 
-type PipelineQueueProducer interface {
-	SendMessage([]byte) error
-	Flush() error
-	Close() error
-}
-
 type QueueConfig struct {
-	Type  string          `yaml:"type"`
-	Redis RedisConfig     `yaml:"redis"`
-	Kafka KafkaConfig     `yaml:"kafka"`
-	Disk  disk.DiskConfig `yaml:"disk"`
+	Type  string              `yaml:"type"`
+	Redis backend.RedisConfig `yaml:"redis"`
+	Kafka backend.KafkaConfig `yaml:"kafka"`
+	Disk  disk.DiskConfig     `yaml:"disk"`
 }
 
 type QueueProducerObject struct {
@@ -142,7 +135,7 @@ func (sd *QueueProducerObject) StartBackend() {
 	}
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	r := sd.backend.ReadChan
-	var pipelineQueue PipelineQueueProducer
+	var pipelineQueue backend.PipelineQueueProducer
 	var err error
 	for {
 		select {
@@ -205,10 +198,10 @@ func (sd *QueueProducerObject) Stop() {
 
 func CreateQueueProducer(config QueueConfig) QueueProducer {
 	if config.Type == "redis" {
-		return NewRedisQueue(config.Redis)
+		return backend.NewRedisQueue(config.Redis)
 	}
 	if config.Type == "kafka" {
-		return NewKafkaQueue(config.Kafka)
+		return backend.NewKafkaQueue(config.Kafka)
 	}
 	return nil
 }

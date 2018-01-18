@@ -1,4 +1,4 @@
-package queue
+package backend
 
 import (
 	"sync/atomic"
@@ -13,6 +13,12 @@ const (
 	REDIS_CONN_READ_TIMEOUT = 30 //读超时10s,用于brpop操作
 	REDIS_POOL_PING_TIMEOUT = 5  //PING超时
 )
+
+type PipelineQueueProducer interface {
+	SendMessage([]byte) error
+	Flush() error
+	Close() error
+}
 
 type RedisQueue struct {
 	pool   *rd.Pool
