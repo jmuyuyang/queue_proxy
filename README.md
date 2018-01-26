@@ -1,8 +1,19 @@
 ## queue_proxy
 
-- 支持redis/kafka多种队列配置,统一发送方式
-- 支持disk queue做队列消息发送灾备,避免消息丢失
-- 支持队列级别限速,本地队列支持数据压缩
+- 支持redis/kafka/aliyun mqs多种消息服务引擎,
+- 统一发送/消费方式,接口简易(http restful/tcp)
+- 瞬时切换后端消息服务(灾备切换)
+- 多服务智能负载均衡调度
+
+### producer端
+- 本地disk queue做消息服务灾备,避免消息丢失,并支持数据压缩
+- 队列级别限流控制及合理内存检测, 避免后端消息服务过载
+
+### consumer端
+- 屏蔽后端不同消息服务引擎消费方式的差异化
+- 动态调整实际消费worker,低峰期避免空跑
+- 针对redis queue增加message ack功能
+- 增加delay queue支持(redis/kafka)
 
 ### 安装使用
 ```

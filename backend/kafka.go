@@ -23,14 +23,18 @@ type KafkaConfig struct {
 	Size    int    `yaml:"size"`
 }
 
-type KafkaQueue struct {
+type kafkaQueue struct {
 	pool   *pool.ObjectPool
 	config KafkaConfig
 	topic  string
 	enable bool
 }
 
-type KafkaAsyncQueue struct {
+type KafkaQueueProducer struct {
+	kafkaQueue
+}
+
+type KafkaAsyncProducer struct {
 	producer sarama.AsyncProducer
 	topic    string
 }
@@ -80,8 +84,8 @@ func createKafkaQueuePool(config KafkaConfig) *pool.ObjectPool {
 	return pool.NewObjectPool(poolFactory, cfg)
 }
 
-func NewKafkaQueue(config KafkaConfig) *KafkaQueue {
-	return &KafkaQueue{
+func newKafkaQueue(config KafkaConfig) kafkaQueue {
+	return kafkaQueue{
 		pool:   createKafkaQueuePool(config),
 		config: config,
 		topic:  config.Topic,
@@ -89,11 +93,11 @@ func NewKafkaQueue(config KafkaConfig) *KafkaQueue {
 	}
 }
 
-func (q *KafkaQueue) SetTopic(topic string) {
+func (q *kafkaQueue) SetTopic(topic string) {
 	q.topic = topic
 }
 
-func (q *KafkaQueue) CheckQueue() bool {
+func (q *kafkaQueue) CheckQueue() bool {
 	producer, err := q.pool.BorrowObject()
 	if err != nil {
 		q.enable = false
@@ -104,7 +108,17 @@ func (q *KafkaQueue) CheckQueue() bool {
 	return true
 }
 
-func (q *KafkaQueue) SendMessage(data []byte) error {
+func (q *kafkaQueue) IsActive() bool {
+	return q.enable
+}
+
+func NewKafkaQueueProducer(config KafkaConfig) *KafkaQueueProducer {
+	return &KafkaQueueProducer{
+		kafkaQueue: newKafkaQueue(config),
+	}
+}
+
+func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 	obj, err := q.pool.BorrowObject()
 	if err != nil {
 		return err
@@ -122,11 +136,7 @@ func (q *KafkaQueue) SendMessage(data []byte) error {
 	return nil
 }
 
-func (q *KafkaQueue) IsActive() bool {
-	return q.enable
-}
-
-func (q *KafkaQueue) StartPipeline() (PipelineQueueProducer, error) {
+func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	cfg := sarama.NewConfig()
 	cfg.Producer.Return.Successes = true
 	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
@@ -134,13 +144,13 @@ func (q *KafkaQueue) StartPipeline() (PipelineQueueProducer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &KafkaAsyncQueue{
+	return &KafkaAsyncProducer{
 		producer: producer,
 		topic:    q.config.Topic,
 	}, nil
 }
 
-func (q *KafkaAsyncQueue) SendMessage(log []byte) error {
+func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
 	select {
 	case q.producer.Input() <- &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}:
 		return nil
@@ -149,10 +159,10 @@ func (q *KafkaAsyncQueue) SendMessage(log []byte) error {
 	}
 }
 
-func (q *KafkaAsyncQueue) Flush() error {
+func (q *KafkaAsyncProducer) Flush() error {
 	return nil
 }
 
-func (q *KafkaAsyncQueue) Close() error {
+func (q *KafkaAsyncProducer) Close() error {
 	return q.producer.Close()
 }

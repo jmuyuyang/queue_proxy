@@ -20,6 +20,14 @@ type QueueProducer interface {
 	IsActive() bool
 }
 
+type QueueConsumer interface {
+	Start()
+	Stop()
+	SetTopic(string)
+	GetMessageChan() chan *backend.Message
+	AckMessage(backend.MessageID) error
+}
+
 type QueueConfig struct {
 	Type  string              `yaml:"type"`
 	Redis backend.RedisConfig `yaml:"redis"`
@@ -35,6 +43,42 @@ type QueueProducerObject struct {
 	rateController *rateio.Controller
 	checkQueueChan chan int
 	exitChan       chan int
+}
+
+type QueueConsumerObject struct {
+	topic   string
+	config  QueueConfig
+	queue   QueueConsumer
+	MsgChan chan *backend.Message
+}
+
+func NewQueueConsumer(topicName string, config QueueConfig) *QueueConsumerObject {
+	consumerObj := &QueueConsumerObject{
+		topic:  topicName,
+		config: config,
+		queue:  backend.NewRedisQueueConsumer(config.Redis),
+	}
+	consumerObj.MsgChan = consumerObj.queue.GetMessageChan()
+	return consumerObj
+}
+
+/**
+* 设置队列类型
+ */
+func (t *QueueConsumerObject) SetQueueType(queueType string) {
+	t.config.Type = queueType
+}
+
+/**
+* 设置publish 主题
+ */
+func (t *QueueConsumerObject) SetTopic(topicName string) {
+	t.topic = topicName
+	t.queue.SetTopic(topicName)
+}
+
+func (t *QueueConsumerObject) Start() {
+	t.queue.Start()
 }
 
 func NewQueueProducer(topicName string, config QueueConfig, logger seelog.LoggerInterface) *QueueProducerObject {
@@ -198,10 +242,10 @@ func (sd *QueueProducerObject) Stop() {
 
 func CreateQueueProducer(config QueueConfig) QueueProducer {
 	if config.Type == "redis" {
-		return backend.NewRedisQueue(config.Redis)
+		return backend.NewRedisQueueProducer(config.Redis)
 	}
 	if config.Type == "kafka" {
-		return backend.NewKafkaQueue(config.Kafka)
+		return backend.NewKafkaQueueProducer(config.Kafka)
 	}
 	return nil
 }
