@@ -63,6 +63,7 @@ func NewQueueConsumer(topicName string, config QueueConfig) *QueueConsumerObject
 		queue:  CreateQueueConsumer(config, backend.NewOptions()),
 	}
 	consumerObj.MsgChan = consumerObj.queue.GetMessageChan()
+	consumerObj.SetTopic(topicName)
 	return consumerObj
 }
 

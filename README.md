@@ -50,4 +50,9 @@
     queue.SendMessage(dateByte)
     queue.SetRateLimit(ratePerSecond) //限制限流(每秒流速)
     queue.Stop()
+	
+    queue.NewQueueConsumer(topicName, config)
+    queue.SetQueueType("kafka")
+    queue.Start()
+    msg := <-queue.GetMsgChan()
 ```
