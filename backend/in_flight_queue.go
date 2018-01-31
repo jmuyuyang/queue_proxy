@@ -1,12 +1,6 @@
 package backend
 
-type FlightMessage struct {
-	ID    MessageID
-	pri   int64
-	index int
-}
-
-type inFlightPqueue []*FlightMessage
+type inFlightPqueue []*Message
 
 func newInFlightPqueue(capacity int) inFlightPqueue {
 	return make(inFlightPqueue, 0, capacity)
@@ -18,7 +12,7 @@ func (pq inFlightPqueue) Swap(i, j int) {
 	pq[j].index = j
 }
 
-func (pq *inFlightPqueue) Push(x *FlightMessage) {
+func (pq *inFlightPqueue) Push(x *Message) {
 	n := len(*pq)
 	c := cap(*pq)
 	if n+1 > c {
@@ -32,7 +26,7 @@ func (pq *inFlightPqueue) Push(x *FlightMessage) {
 	pq.up(n)
 }
 
-func (pq *inFlightPqueue) Pop() *FlightMessage {
+func (pq *inFlightPqueue) Pop() *Message {
 	n := len(*pq)
 	c := cap(*pq)
 	pq.Swap(0, n-1)
@@ -48,7 +42,7 @@ func (pq *inFlightPqueue) Pop() *FlightMessage {
 	return x
 }
 
-func (pq *inFlightPqueue) Remove(i int) *FlightMessage {
+func (pq *inFlightPqueue) Remove(i int) *Message {
 	n := len(*pq)
 	if n-1 != i {
 		pq.Swap(i, n-1)
@@ -61,7 +55,7 @@ func (pq *inFlightPqueue) Remove(i int) *FlightMessage {
 	return x
 }
 
-func (pq *inFlightPqueue) PeekAndShift(max int64) (*FlightMessage, int64) {
+func (pq *inFlightPqueue) PeekAndShift(max int64) (*Message, int64) {
 	if len(*pq) == 0 {
 		return nil, 0
 	}

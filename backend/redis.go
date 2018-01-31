@@ -2,12 +2,14 @@ package backend
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	rd "github.com/garyburd/redigo/redis"
 	"github.com/jmuyuyang/queue_proxy/util"
+	"github.com/satori/go.uuid"
 )
 
 const (
@@ -37,13 +39,16 @@ type RedisPipelineProducer struct {
 
 type RedisQueueConsumer struct {
 	redisQueue
-	idChan           chan [MsgIDLength]byte
+	clientID         [ClientIDLength]byte
+	options          *Options
 	exitChan         chan int
+	closeChan        chan int
 	MessageChan      chan *Message
 	inFlightPQ       inFlightPqueue
 	inFlightMutex    sync.Mutex
-	inFlightMessages map[MessageID]*FlightMessage
+	inFlightMessages map[MessageID]*Message
 	waitGroup        util.WaitGroupWrapper
+	workerNum        int
 }
 
 type RedisConfig struct {
@@ -199,31 +204,59 @@ func (q *RedisPipelineProducer) Close() error {
 	return q.Flush()
 }
 
-func NewRedisQueueConsumer(config RedisConfig) *RedisQueueConsumer {
+func NewRedisQueueConsumer(config RedisConfig, options *Options) *RedisQueueConsumer {
+	pqSize := int(math.Max(1, float64(options.MemQueueSize)/2))
+	clientId, _ := uuid.NewV4()
 	return &RedisQueueConsumer{
 		redisQueue:       newRedisQueue(config),
-		idChan:           make(chan [MsgIDLength]byte),
+		clientID:         clientId,
+		options:          options,
 		exitChan:         make(chan int),
-		MessageChan:      make(chan *Message),
-		inFlightPQ:       newInFlightPqueue(10),
-		inFlightMessages: make(map[MessageID]*FlightMessage),
+		closeChan:        make(chan int),
+		MessageChan:      make(chan *Message, options.MemQueueSize),
+		inFlightPQ:       newInFlightPqueue(pqSize),
+		inFlightMessages: make(map[MessageID]*Message),
+		workerNum:        0,
 	}
+}
+
+func (c *RedisQueueConsumer) GetOpts() *Options {
+	return c.options
 }
 
 func (c *RedisQueueConsumer) Start() {
 	c.waitGroup.Wrap(func() {
 		go c.queueScanWorker()
 	})
-	c.waitGroup.Wrap(func() {
-		go c.idPump()
-	})
-	c.startConsumerWorker()
+	c.startConsumerWorker(c.options.MinWorkerNum)
 }
 
-func (c *RedisQueueConsumer) startConsumerWorker() {
-	c.waitGroup.Wrap(func() {
-		go c.queueConsumerWorker()
-	})
+func (c *RedisQueueConsumer) startConsumerWorker(num int) {
+	if c.workerNum < num {
+		adjustNum := num - c.workerNum
+		for i := 0; i < adjustNum; i++ {
+			c.waitGroup.Wrap(func() {
+				go c.queueConsumerWorker()
+			})
+			c.workerNum++
+		}
+	} else {
+		c.closeChan <- 1
+		c.workerNum--
+	}
+}
+
+func (c *RedisQueueConsumer) resizeConsumerWorker() {
+	conn := c.pool.Get()
+	defer conn.Close()
+	queueLen, err := rd.Int(conn.Do("LLEN", c.topic))
+	if err != nil {
+		return
+	}
+	if queueLen > int(float64(c.workerNum)*c.options.QueueDelayRatio*2.0) {
+		//如果delay size超过最大delay倍数两倍
+		c.startConsumerWorker(c.workerNum * c.options.WorkerAdjustRatio)
+	}
 }
 
 func (c *RedisQueueConsumer) AckMessage(msgId MessageID) error {
@@ -243,27 +276,9 @@ func (c *RedisQueueConsumer) GetMessageChan() chan *Message {
 }
 
 func (c *RedisQueueConsumer) Stop() {
+	close(c.closeChan)
 	close(c.exitChan)
 	c.waitGroup.Wait()
-}
-
-/**
-* guid 生成器(message id)
- */
-func (c *RedisQueueConsumer) idPump() {
-	factory := &util.GuidFactory{}
-	for {
-		id, err := factory.NewGUID(0)
-		if err != nil {
-			continue
-		}
-		select {
-		case c.idChan <- id.Hex():
-		case <-c.exitChan:
-			goto exit
-		}
-	}
-exit:
 }
 
 func (c *RedisQueueConsumer) getMessage(wait bool) (*Message, error) {
@@ -280,13 +295,15 @@ func (c *RedisQueueConsumer) getMessage(wait bool) (*Message, error) {
 		data, err = rd.Bytes(conn.Do("RPOP", c.topic))
 	}
 	if len(data) > 0 {
-		msgId := <-c.idChan
-		message := &Message{
-			ID:   MessageID(msgId),
-			Body: data,
+		msgId, err := uuid.NewV4()
+		if err != nil {
+			return nil, err
 		}
-		inFlightKey := fmt.Sprintf("%s_%s", c.topic, message.ID)
-		conn.Do("SET", inFlightKey, data)
+		message := &Message{
+			ClientID: c.clientID,
+			ID:       MessageID(msgId),
+			Body:     data,
+		}
 		return message, err
 	}
 	return nil, err
@@ -295,13 +312,10 @@ func (c *RedisQueueConsumer) getMessage(wait bool) (*Message, error) {
 func (c *RedisQueueConsumer) addToInFlightPQ(msg *Message, timeout time.Duration) {
 	c.inFlightMutex.Lock()
 	now := time.Now()
-	flightMsg := &FlightMessage{
-		ID:    msg.ID,
-		pri:   now.Add(timeout).UnixNano(),
-		index: 0,
-	}
-	c.inFlightPQ.Push(flightMsg)
-	c.inFlightMessages[msg.ID] = flightMsg
+	msg.pri = now.Add(timeout).UnixNano()
+	msg.index = 0
+	c.inFlightPQ.Push(msg)
+	c.inFlightMessages[msg.ID] = msg
 	c.inFlightMutex.Unlock()
 	return
 }
@@ -323,27 +337,13 @@ func (c *RedisQueueConsumer) removeFromInFlightPQ(msgId MessageID) {
 	return
 }
 
-func (c *RedisQueueConsumer) requeueMessage(msgId MessageID, timeout time.Duration) error {
+func (c *RedisQueueConsumer) requeueMessage(msg *Message) error {
 	conn := c.pool.Get()
 	defer conn.Close()
-	key := fmt.Sprintf("%s_%s", c.topic, msgId)
-	body, err := rd.Bytes(conn.Do("GET", key))
+	_, err := conn.Do("LPUSH", c.topic, msg.Body)
 	if err != nil {
 		return err
 	}
-	if len(body) == 0 {
-		return nil
-	}
-	_, err = conn.Do("LPUSH", c.topic, body)
-	if err != nil {
-		return err
-	}
-	conn.Do("DEL", key)
-	msg := &Message{
-		ID:   msgId,
-		Body: body,
-	}
-	c.addToInFlightPQ(msg, timeout)
 	return nil
 }
 
@@ -351,7 +351,6 @@ func (c *RedisQueueConsumer) queueConsumerWorker() {
 	for {
 		message, err := c.getMessage(true)
 		if err != nil {
-			fmt.Println(err)
 			continue
 		}
 		if message == nil {
@@ -360,8 +359,8 @@ func (c *RedisQueueConsumer) queueConsumerWorker() {
 		}
 		select {
 		case c.MessageChan <- message:
-			c.addToInFlightPQ(message, 30*time.Second)
-		case <-c.exitChan:
+			c.addToInFlightPQ(message, time.Duration(c.options.QueueInActiveTimeout)*time.Second)
+		case <-c.closeChan:
 			goto exit
 		}
 	}
@@ -392,7 +391,7 @@ func (c *RedisQueueConsumer) processInFlightQueue(t int64) error {
 			goto exit
 		}
 		c.removeFromInFlightPQ(msg.ID)
-		err = c.requeueMessage(msg.ID, 30*time.Second)
+		err = c.requeueMessage(msg)
 		if err != nil {
 			goto exit
 		}

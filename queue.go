@@ -24,6 +24,7 @@ type QueueConsumer interface {
 	Start()
 	Stop()
 	SetTopic(string)
+	GetOpts() *backend.Options
 	GetMessageChan() chan *backend.Message
 	AckMessage(backend.MessageID) error
 }
@@ -52,11 +53,14 @@ type QueueConsumerObject struct {
 	MsgChan chan *backend.Message
 }
 
+/**
+* 消息服务consumer object
+ */
 func NewQueueConsumer(topicName string, config QueueConfig) *QueueConsumerObject {
 	consumerObj := &QueueConsumerObject{
 		topic:  topicName,
 		config: config,
-		queue:  backend.NewRedisQueueConsumer(config.Redis),
+		queue:  CreateQueueConsumer(config, backend.NewOptions()),
 	}
 	consumerObj.MsgChan = consumerObj.queue.GetMessageChan()
 	return consumerObj
@@ -67,6 +71,7 @@ func NewQueueConsumer(topicName string, config QueueConfig) *QueueConsumerObject
  */
 func (t *QueueConsumerObject) SetQueueType(queueType string) {
 	t.config.Type = queueType
+	t.queue = CreateQueueConsumer(t.config, backend.NewOptions())
 }
 
 /**
@@ -81,6 +86,17 @@ func (t *QueueConsumerObject) Start() {
 	t.queue.Start()
 }
 
+func (t *QueueConsumerObject) Stop() {
+	t.queue.Stop()
+}
+
+func (t *QueueConsumerObject) GetOpts() *backend.Options {
+	return t.queue.GetOpts()
+}
+
+/**
+* 消息服务producer object
+ */
 func NewQueueProducer(topicName string, config QueueConfig, logger seelog.LoggerInterface) *QueueProducerObject {
 	senderObj := &QueueProducerObject{
 		topic:          topicName,
@@ -246,6 +262,13 @@ func CreateQueueProducer(config QueueConfig) QueueProducer {
 	}
 	if config.Type == "kafka" {
 		return backend.NewKafkaQueueProducer(config.Kafka)
+	}
+	return nil
+}
+
+func CreateQueueConsumer(config QueueConfig, options *backend.Options) QueueConsumer {
+	if config.Type == "redis" {
+		return backend.NewRedisQueueConsumer(config.Redis, options)
 	}
 	return nil
 }
