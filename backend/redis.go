@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -260,15 +259,8 @@ func (c *RedisQueueConsumer) resizeConsumerWorker() {
 }
 
 func (c *RedisQueueConsumer) AckMessage(msgId MessageID) error {
-	conn := c.pool.Get()
-	defer conn.Close()
-	key := fmt.Sprintf("%s_%s", c.topic, msgId)
-	_, err := conn.Do("DEL", key)
-	if err == nil {
-		c.removeFromInFlightPQ(msgId)
-		return nil
-	}
-	return err
+	c.removeFromInFlightPQ(msgId)
+	return nil
 }
 
 func (c *RedisQueueConsumer) GetMessageChan() chan *Message {

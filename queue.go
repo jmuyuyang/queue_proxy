@@ -47,22 +47,23 @@ type QueueProducerObject struct {
 }
 
 type QueueConsumerObject struct {
-	topic   string
-	config  QueueConfig
-	queue   QueueConsumer
-	MsgChan chan *backend.Message
+	topic  string
+	config QueueConfig
+	queue  QueueConsumer
 }
 
 /**
 * 消息服务consumer object
  */
-func NewQueueConsumer(topicName string, config QueueConfig) *QueueConsumerObject {
+func NewQueueConsumer(topicName string, config QueueConfig, options *backend.Options) *QueueConsumerObject {
+	if options == nil {
+		options = backend.NewOptions()
+	}
 	consumerObj := &QueueConsumerObject{
 		topic:  topicName,
 		config: config,
-		queue:  CreateQueueConsumer(config, backend.NewOptions()),
+		queue:  createQueueConsumer(config, options),
 	}
-	consumerObj.MsgChan = consumerObj.queue.GetMessageChan()
 	consumerObj.SetTopic(topicName)
 	return consumerObj
 }
@@ -72,7 +73,7 @@ func NewQueueConsumer(topicName string, config QueueConfig) *QueueConsumerObject
  */
 func (t *QueueConsumerObject) SetQueueType(queueType string) {
 	t.config.Type = queueType
-	t.queue = CreateQueueConsumer(t.config, backend.NewOptions())
+	t.queue = createQueueConsumer(t.config, backend.NewOptions())
 }
 
 /**
@@ -95,6 +96,20 @@ func (t *QueueConsumerObject) GetOpts() *backend.Options {
 	return t.queue.GetOpts()
 }
 
+/*
+* 获取消息消费channel
+ */
+func (t *QueueConsumerObject) GetMessageChan() chan *backend.Message {
+	return t.queue.GetMessageChan()
+}
+
+/**
+* ack queue message
+ */
+func (t *QueueConsumerObject) AckMessage(msgId backend.MessageID) error {
+	return t.queue.AckMessage(msgId)
+}
+
 /**
 * 消息服务producer object
  */
@@ -102,7 +117,7 @@ func NewQueueProducer(topicName string, config QueueConfig, logger seelog.Logger
 	senderObj := &QueueProducerObject{
 		topic:          topicName,
 		config:         config,
-		queue:          CreateQueueProducer(config),
+		queue:          createQueueProducer(config),
 		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
 		exitChan:       make(chan int),
 	}
@@ -131,7 +146,7 @@ func (t *QueueProducerObject) createDiskQueue() (*disk.DiskQueue, error) {
  */
 func (t *QueueProducerObject) SetQueueType(queueType string) {
 	t.config.Type = queueType
-	t.queue = CreateQueueProducer(t.config)
+	t.queue = createQueueProducer(t.config)
 }
 
 /**
@@ -257,7 +272,11 @@ func (sd *QueueProducerObject) Stop() {
 	sd.backend.Stop()
 }
 
-func CreateQueueProducer(config QueueConfig) QueueProducer {
+func NewConsumerOptions() *backend.Options {
+	return backend.NewOptions()
+}
+
+func createQueueProducer(config QueueConfig) QueueProducer {
 	if config.Type == "redis" {
 		return backend.NewRedisQueueProducer(config.Redis)
 	}
@@ -267,7 +286,7 @@ func CreateQueueProducer(config QueueConfig) QueueProducer {
 	return nil
 }
 
-func CreateQueueConsumer(config QueueConfig, options *backend.Options) QueueConsumer {
+func createQueueConsumer(config QueueConfig, options *backend.Options) QueueConsumer {
 	if config.Type == "redis" {
 		return backend.NewRedisQueueConsumer(config.Redis, options)
 	}
