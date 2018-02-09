@@ -1,6 +1,6 @@
 ## queue_proxy
 
-- 支持redis/kafka/aliyun mqs多种消息服务引擎,
+- 支持redis/kafka/aliyun mns多种消息服务引擎,
 - 统一发送/消费方式,接口简易(http restful/tcp)
 - 瞬时切换后端消息服务(灾备切换)
 - 多服务智能负载均衡调度
