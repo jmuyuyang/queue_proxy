@@ -1,11 +1,10 @@
 package backend
 
 const (
-	MsgIDLength    = 16
 	ClientIDLength = 16
 )
 
-type MessageID [MsgIDLength]byte
+type MessageID string
 
 type Message struct {
 	ClientID [ClientIDLength]byte `json:"client_id"`

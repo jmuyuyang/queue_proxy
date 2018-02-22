@@ -1,4 +1,4 @@
-package disk
+package backend
 
 import (
 	"bufio"
@@ -30,8 +30,8 @@ type Compressor interface {
 }
 
 type DiskQueue struct {
-	WriteChan       chan []byte
-	ReadChan        chan []byte
+	writeChan       chan []byte
+	readChan        chan []byte
 	exitChan        chan int
 	exitSyncChan    chan int
 	readPos         int64
@@ -55,8 +55,8 @@ type DiskQueue struct {
 
 func NewDiskQueue(name string, cfg DiskConfig) (*DiskQueue, error) {
 	d := DiskQueue{
-		WriteChan:       make(chan []byte),
-		ReadChan:        make(chan []byte),
+		writeChan:       make(chan []byte),
+		readChan:        make(chan []byte),
 		exitChan:        make(chan int),
 		exitSyncChan:    make(chan int),
 		readPos:         0,
@@ -85,8 +85,21 @@ func NewDiskQueue(name string, cfg DiskConfig) (*DiskQueue, error) {
 	return &d, nil
 }
 
+func (d *DiskQueue) SetTopic(topicName string) {
+	d.name = topicName
+}
+
 func (d *DiskQueue) SetLogger(logger seelog.LoggerInterface) {
 	d.logger = logger
+}
+
+func (d *DiskQueue) SendMessage(data []byte) error {
+	d.writeChan <- data
+	return nil
+}
+
+func (d *DiskQueue) GetMessageChan() chan []byte {
+	return d.readChan
 }
 
 func (d *DiskQueue) logError(err error) {
@@ -128,9 +141,9 @@ func (d *DiskQueue) ioLoop() {
 					d.logError(err)
 					continue
 				}
-				r = d.ReadChan
+				r = d.readChan
 			}
-			r = d.ReadChan
+			r = d.readChan
 		} else {
 			r = nil
 		}
@@ -138,7 +151,7 @@ func (d *DiskQueue) ioLoop() {
 		select {
 		case r <- dataRead:
 			d.moveForward()
-		case dataWrite := <-d.WriteChan:
+		case dataWrite := <-d.writeChan:
 			d.writeOne(dataWrite)
 		case <-syncTicker.C:
 			d.needSync = true

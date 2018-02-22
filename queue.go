@@ -5,7 +5,6 @@ import (
 
 	seelog "github.com/cihub/seelog"
 	"github.com/jmuyuyang/queue_proxy/backend"
-	"github.com/jmuyuyang/queue_proxy/disk"
 	"github.com/jmuyuyang/queue_proxy/rateio"
 )
 
@@ -33,14 +32,14 @@ type QueueConfig struct {
 	Type  string              `yaml:"type"`
 	Redis backend.RedisConfig `yaml:"redis"`
 	Kafka backend.KafkaConfig `yaml:"kafka"`
-	Disk  disk.DiskConfig     `yaml:"disk"`
+	Disk  backend.DiskConfig  `yaml:"disk"`
 }
 
 type QueueProducerObject struct {
 	topic          string
 	config         QueueConfig
 	queue          QueueProducer
-	backend        *disk.DiskQueue
+	backend        *backend.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
 	exitChan       chan int
@@ -122,7 +121,7 @@ func NewQueueProducer(topicName string, config QueueConfig, logger seelog.Logger
 		exitChan:       make(chan int),
 	}
 	if config.Disk.Path != "" {
-		diskQueue, err := senderObj.createDiskQueue()
+		diskQueue, err := createDiskQueue(topicName, senderObj.config.Disk)
 		if err != nil {
 			logger.Error(err)
 		} else {
@@ -134,11 +133,6 @@ func NewQueueProducer(topicName string, config QueueConfig, logger seelog.Logger
 	}
 	senderObj.SetTopic(topicName)
 	return senderObj
-}
-
-func (t *QueueProducerObject) createDiskQueue() (*disk.DiskQueue, error) {
-	diskQueueName := t.config.Disk.Prefix + "-" + t.topic
-	return disk.NewDiskQueue(diskQueueName, t.config.Disk)
 }
 
 /**
@@ -199,7 +193,7 @@ func (sd *QueueProducerObject) SendMessage(data []byte) error {
 	if addBackendStore {
 		//添加到灾备磁盘队列
 		if sd.backend != nil {
-			sd.backend.WriteChan <- data
+			sd.backend.SendMessage(data)
 		}
 	}
 	return err
@@ -210,7 +204,7 @@ func (sd *QueueProducerObject) StartBackend() {
 		return
 	}
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
-	r := sd.backend.ReadChan
+	r := sd.backend.GetMessageChan()
 	var pipelineQueue backend.PipelineQueueProducer
 	var err error
 	for {
@@ -221,7 +215,7 @@ func (sd *QueueProducerObject) StartBackend() {
 			}
 			if err != nil {
 				//创建pipeline队列失败,则直接禁止读取disk queue
-				sd.backend.WriteChan <- dataByte
+				sd.backend.SendMessage(dataByte)
 				pipelineQueue = nil
 				r = nil
 			}
@@ -242,7 +236,7 @@ func (sd *QueueProducerObject) StartBackend() {
 				pipelineQueue = nil
 			}
 			if sd.queue != nil && sd.queue.CheckQueue() {
-				r = sd.backend.ReadChan
+				r = sd.backend.GetMessageChan()
 			} else {
 				r = nil
 			}
@@ -274,6 +268,11 @@ func (sd *QueueProducerObject) Stop() {
 
 func NewConsumerOptions() *backend.Options {
 	return backend.NewOptions()
+}
+
+func createDiskQueue(topic string, config backend.DiskConfig) (*backend.DiskQueue, error) {
+	diskQueueName := config.Prefix + "-" + topic
+	return backend.NewDiskQueue(diskQueueName, config)
 }
 
 func createQueueProducer(config QueueConfig) QueueProducer {

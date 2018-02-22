@@ -293,7 +293,7 @@ func (c *RedisQueueConsumer) getMessage(wait bool) (*Message, error) {
 		}
 		message := &Message{
 			ClientID: c.clientID,
-			ID:       MessageID(msgId),
+			ID:       MessageID(msgId.String()),
 			Body:     data,
 		}
 		return message, err
