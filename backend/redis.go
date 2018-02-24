@@ -54,7 +54,6 @@ type RedisConfig struct {
 	Bind        string `yaml:"bind"`
 	Timeout     int    `yaml:"timeout"`
 	Size        int    `yaml:"size"`
-	Topic       string `yaml:"topic"`
 	MaxQueueLen int    `yaml:"max_queue_len"`
 }
 
@@ -81,7 +80,6 @@ func newRedisQueue(config RedisConfig) redisQueue {
 	return redisQueue{
 		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.Size),
 		config: config,
-		topic:  config.Topic,
 		enable: true,
 	}
 }
@@ -168,7 +166,7 @@ func (q *RedisQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	}
 	pipelineQueue := &RedisPipelineProducer{
 		conn:          conn,
-		topic:         q.config.Topic,
+		topic:         q.topic,
 		bufferSize:    int32(DEFAULT_BUFFER_SIZE),
 		curBufferSize: int32(0),
 	}
@@ -205,7 +203,7 @@ func (q *RedisPipelineProducer) Close() error {
 
 func NewRedisQueueConsumer(config RedisConfig, options *Options) *RedisQueueConsumer {
 	pqSize := int(math.Max(1, float64(options.MemQueueSize)/2))
-	clientId, _ := uuid.NewV4()
+	clientId := uuid.NewV4()
 	return &RedisQueueConsumer{
 		redisQueue:       newRedisQueue(config),
 		clientID:         clientId,
@@ -287,7 +285,7 @@ func (c *RedisQueueConsumer) getMessage(wait bool) (*Message, error) {
 		data, err = rd.Bytes(conn.Do("RPOP", c.topic))
 	}
 	if len(data) > 0 {
-		msgId, err := uuid.NewV4()
+		msgId := uuid.NewV4()
 		if err != nil {
 			return nil, err
 		}

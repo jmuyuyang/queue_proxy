@@ -19,14 +19,13 @@ type KafkaPoolFactory struct {
 type KafkaConfig struct {
 	Bind    string `yaml:"bind"`
 	Timeout int    `yaml:"timeout"`
-	Topic   string `yaml:"topic"`
 	Size    int    `yaml:"size"`
 }
 
 type kafkaQueue struct {
 	pool   *pool.ObjectPool
-	config KafkaConfig
 	topic  string
+	config KafkaConfig
 	enable bool
 }
 
@@ -88,7 +87,6 @@ func newKafkaQueue(config KafkaConfig) kafkaQueue {
 	return kafkaQueue{
 		pool:   createKafkaQueuePool(config),
 		config: config,
-		topic:  config.Topic,
 		enable: true,
 	}
 }
@@ -146,7 +144,7 @@ func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	}
 	return &KafkaAsyncProducer{
 		producer: producer,
-		topic:    q.config.Topic,
+		topic:    q.topic,
 	}, nil
 }
 

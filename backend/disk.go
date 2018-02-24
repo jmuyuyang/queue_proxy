@@ -11,7 +11,6 @@ import (
 	"path"
 	"time"
 
-	seelog "github.com/cihub/seelog"
 	"github.com/jmuyuyang/queue_proxy/compressor"
 )
 
@@ -50,10 +49,10 @@ type DiskQueue struct {
 	syncTimeout     time.Duration
 	needSync        bool
 	compressor      Compressor
-	logger          seelog.LoggerInterface
+	logf            AppLogFunc
 }
 
-func NewDiskQueue(name string, cfg DiskConfig) (*DiskQueue, error) {
+func NewDiskQueue(cfg DiskConfig) (*DiskQueue, error) {
 	d := DiskQueue{
 		writeChan:       make(chan []byte),
 		readChan:        make(chan []byte),
@@ -63,7 +62,6 @@ func NewDiskQueue(name string, cfg DiskConfig) (*DiskQueue, error) {
 		nextReadPos:     0,
 		writePos:        0,
 		maxBytesPerFile: MaxBytesPerFile,
-		name:            name,
 		dataPath:        cfg.Path,
 		syncTimeout:     time.Duration(cfg.FlushTimeout) * time.Second,
 		needSync:        false,
@@ -76,12 +74,6 @@ func NewDiskQueue(name string, cfg DiskConfig) (*DiskQueue, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = d.retrieveMetaData()
-	if err != nil {
-		//元数据恢复失败
-		return nil, err
-	}
-	go d.ioLoop()
 	return &d, nil
 }
 
@@ -89,8 +81,33 @@ func (d *DiskQueue) SetTopic(topicName string) {
 	d.name = topicName
 }
 
-func (d *DiskQueue) SetLogger(logger seelog.LoggerInterface) {
-	d.logger = logger
+func (d *DiskQueue) SetLogger(logger AppLogFunc) {
+	d.logf = logger
+}
+
+func (d *DiskQueue) Start() error {
+	//恢复元数据
+	err := d.retrieveMetaData()
+	if err != nil {
+		return err
+	}
+	go d.ioLoop()
+	return nil
+}
+
+func (d *DiskQueue) Stop() {
+	close(d.exitChan)
+	<-d.exitSyncChan
+
+	if d.readFile != nil {
+		d.readFile.Close()
+		d.readFile = nil
+	}
+
+	if d.writeFile != nil {
+		d.writeFile.Close()
+		d.writeFile = nil
+	}
 }
 
 func (d *DiskQueue) SendMessage(data []byte) error {
@@ -103,8 +120,8 @@ func (d *DiskQueue) GetMessageChan() chan []byte {
 }
 
 func (d *DiskQueue) logError(err error) {
-	if d.logger != nil {
-		d.logger.Error(err)
+	if d.logf != nil {
+		d.logf("ERROR", err.Error())
 	}
 }
 
@@ -165,21 +182,6 @@ func (d *DiskQueue) ioLoop() {
 exit:
 	syncTicker.Stop()
 	d.exitSyncChan <- 1
-}
-
-func (d *DiskQueue) Stop() {
-	close(d.exitChan)
-	<-d.exitSyncChan
-
-	if d.readFile != nil {
-		d.readFile.Close()
-		d.readFile = nil
-	}
-
-	if d.writeFile != nil {
-		d.writeFile.Close()
-		d.writeFile = nil
-	}
 }
 
 func (d *DiskQueue) readOne() ([]byte, error) {
