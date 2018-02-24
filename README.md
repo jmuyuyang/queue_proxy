@@ -45,7 +45,7 @@
     yaml.Unmarshal([]byte(config), &config)
     queue.NewQueueProducer(topicName, config)
     queue.SetQueueType("kafka")
-    queue.StartBackend()
+    queue.Start()
 
     queue.SendMessage(dateByte)
     queue.SetRateLimit(ratePerSecond) //限制限流(每秒流速)
@@ -54,5 +54,5 @@
     queue.NewQueueConsumer(topicName, config)
     queue.SetQueueType("kafka")
     queue.Start()
-    msg := <-queue.GetMsgChan()
+    msg := <-queue.GetMessageChan()
 ```
