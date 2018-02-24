@@ -14,7 +14,7 @@ type QueueProducer interface {
 	StartPipeline() (backend.PipelineQueueProducer, error)
 	SetTopic(string)
 	SendMessage([]byte) error
-	CheckQueue() bool
+	CheckActive() bool
 	IsActive() bool
 }
 
@@ -233,13 +233,13 @@ func (sd *QueueProducerObject) startBackend() {
 				pipelineQueue.Close()
 				pipelineQueue = nil
 			}
-			if sd.queue != nil && sd.queue.CheckQueue() {
+			if sd.queue != nil && sd.queue.CheckActive() {
 				r = sd.diskQueue.GetMessageChan()
 			} else {
 				r = nil
 			}
 		case <-sd.checkQueueChan:
-			if sd.queue == nil || sd.queue.IsActive() && !sd.queue.CheckQueue() {
+			if sd.queue == nil || sd.queue.IsActive() && !sd.queue.CheckActive() {
 				if pipelineQueue != nil {
 					pipelineQueue.Close()
 					pipelineQueue = nil

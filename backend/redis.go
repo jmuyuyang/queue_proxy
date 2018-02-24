@@ -22,7 +22,14 @@ type redisQueue struct {
 	pool   *rd.Pool
 	config RedisConfig
 	topic  string
-	enable bool
+	active bool
+}
+
+type RedisConfig struct {
+	Bind        string `yaml:"bind"`
+	Timeout     int    `yaml:"timeout"`
+	Size        int    `yaml:"size"`
+	MaxQueueLen int    `yaml:"max_queue_len"`
 }
 
 type RedisQueueProducer struct {
@@ -50,13 +57,6 @@ type RedisQueueConsumer struct {
 	workerNum        int
 }
 
-type RedisConfig struct {
-	Bind        string `yaml:"bind"`
-	Timeout     int    `yaml:"timeout"`
-	Size        int    `yaml:"size"`
-	MaxQueueLen int    `yaml:"max_queue_len"`
-}
-
 func createRedisQueuePool(host string, connTimeout, idleTimeout time.Duration, maxConn int) *rd.Pool {
 	pool := &rd.Pool{
 		MaxIdle:     maxConn,
@@ -80,7 +80,7 @@ func newRedisQueue(config RedisConfig) redisQueue {
 	return redisQueue{
 		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.Size),
 		config: config,
-		enable: true,
+		active: true,
 	}
 }
 
@@ -89,31 +89,31 @@ func (q *redisQueue) SetTopic(topic string) {
 }
 
 func (q *redisQueue) IsActive() bool {
-	return q.enable
+	return q.active
 }
 
 /**
 * 检查队列是否正常启用
  */
-func (q *redisQueue) CheckQueue() bool {
-	if !q.checkConn() {
+func (q *redisQueue) CheckActive() bool {
+	if !q.checkConnActive() {
 		//链接非活动
-		q.enable = false
+		q.active = false
 		return false
 	}
 	if !q.checkQueueLen() {
 		//队列长度超过限制
-		q.enable = false
+		q.active = false
 		return false
 	}
-	q.enable = true
+	q.active = true
 	return true
 }
 
 /**
 * 检查队列链接是否正常
  */
-func (q *redisQueue) checkConn() bool {
+func (q *redisQueue) checkConnActive() bool {
 	conn := q.pool.Get()
 	defer conn.Close()
 	_, err := rd.DoWithTimeout(conn, time.Duration(REDIS_POOL_PING_TIMEOUT)*time.Second, "PING")

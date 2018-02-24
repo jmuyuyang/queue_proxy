@@ -26,7 +26,7 @@ type kafkaQueue struct {
 	pool   *pool.ObjectPool
 	topic  string
 	config KafkaConfig
-	enable bool
+	active bool
 }
 
 type KafkaQueueProducer struct {
@@ -87,7 +87,7 @@ func newKafkaQueue(config KafkaConfig) kafkaQueue {
 	return kafkaQueue{
 		pool:   createKafkaQueuePool(config),
 		config: config,
-		enable: true,
+		active: true,
 	}
 }
 
@@ -95,19 +95,22 @@ func (q *kafkaQueue) SetTopic(topic string) {
 	q.topic = topic
 }
 
-func (q *kafkaQueue) CheckQueue() bool {
+/**
+* 检测队列是否活跃
+ */
+func (q *kafkaQueue) CheckActive() bool {
 	producer, err := q.pool.BorrowObject()
 	if err != nil {
-		q.enable = false
+		q.active = false
 		return false
 	}
 	defer q.pool.ReturnObject(producer)
-	q.enable = true
+	q.active = true
 	return true
 }
 
 func (q *kafkaQueue) IsActive() bool {
-	return q.enable
+	return q.active
 }
 
 func NewKafkaQueueProducer(config KafkaConfig) *KafkaQueueProducer {
