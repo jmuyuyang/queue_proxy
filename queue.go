@@ -263,6 +263,7 @@ func (sd *QueueProducerObject) startBackend() {
 		}
 	}
 exit:
+	checkQueueTicker.Stop()
 }
 
 /**

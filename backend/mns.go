@@ -2,13 +2,15 @@ package backend
 
 import (
 	"sync"
+	"time"
 
 	"github.com/jmuyuyang/ali_mns"
 	"github.com/jmuyuyang/queue_proxy/config"
 )
 
 const (
-	MESSAGE_BUFFER_SIZE = 10
+	MESSAGE_BUFFER_SIZE          = 10
+	MESSAGE_BUFFER_FLUSH_TIMEOUT = 2
 )
 
 type mnsQueue struct {
@@ -84,6 +86,7 @@ func (q *MnsQueueProducer) SendMessage(data []byte) error {
 	queue.SetTopic(q.topic)
 	msg := ali_mns.MessageSendRequest{
 		MessageBody: ali_mns.Base64Bytes(data),
+		Priority:    1,
 	}
 	_, err := queue.SendMessage(msg)
 	return err
@@ -105,6 +108,7 @@ func (q *MnsQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 func (q *MnsPipelineProducer) SendMessage(data []byte) error {
 	msg := ali_mns.MessageSendRequest{
 		MessageBody: ali_mns.Base64Bytes(data),
+		Priority:    1,
 	}
 	q.messageChan <- msg
 	return nil
@@ -124,6 +128,7 @@ func (q *MnsPipelineProducer) Close() error {
  */
 func (q *MnsPipelineProducer) queueLoop() {
 	var flushDataBuffer bool = false
+	var flushTicker time.Ticker = time.NewTicker(time.Duration(MESSAGE_BUFFER_FLUSH_TIMEOUT) * time.Second)
 	for {
 		select {
 		case msg := <-q.messageChan:
@@ -131,22 +136,27 @@ func (q *MnsPipelineProducer) queueLoop() {
 			if len(q.dataBuffer) >= MESSAGE_BUFFER_SIZE {
 				flushDataBuffer = true
 			}
+		case <-flushTicker.C:
+			flushDataBuffer = true
 		case <-q.exitChan:
 			flushDataBuffer = true
 			goto exit
 		}
 
 		if flushDataBuffer {
-			batchMessage := ali_mns.BatchMessageSendRequest{
-				Messages: q.dataBuffer,
+			if len(q.dataBuffer) > 0 {
+				batchMessage := ali_mns.BatchMessageSendRequest{
+					Messages: q.dataBuffer,
+				}
+				q.queue.BatchSendMessage(batchMessage)
+				q.dataBuffer = make([]ali_mns.MessageSendRequest, 0)
 			}
-			q.queue.BatchSendMessage(batchMessage)
-			q.dataBuffer = make([]ali_mns.MessageSendRequest, 0)
 			flushDataBuffer = false
 		}
 	}
 exit:
-	if flushDataBuffer {
+	flushTicker.Stop()
+	if flushDataBuffer && len(q.dataBuffer) > 0 {
 		batchMessage := ali_mns.BatchMessageSendRequest{
 			Messages: q.dataBuffer,
 		}
