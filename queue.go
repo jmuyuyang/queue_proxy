@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jmuyuyang/queue_proxy/backend"
+	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/rateio"
 )
 
@@ -27,15 +28,8 @@ type QueueConsumer interface {
 	AckMessage(backend.MessageID) error
 }
 
-type QueueConfig struct {
-	Type  string              `yaml:"type"`
-	Redis backend.RedisConfig `yaml:"redis"`
-	Kafka backend.KafkaConfig `yaml:"kafka"`
-	Disk  backend.DiskConfig  `yaml:"disk"`
-}
-
 type QueueProducerObject struct {
-	config         QueueConfig
+	config         config.Config
 	queue          QueueProducer
 	diskQueue      *backend.DiskQueue
 	rateController *rateio.Controller
@@ -44,41 +38,49 @@ type QueueProducerObject struct {
 }
 
 type QueueConsumerObject struct {
-	topic  string
-	config QueueConfig
+	config config.Config
 	queue  QueueConsumer
+}
+
+/*
+* 解析配置文件
+ */
+func ParseConfigFile(cfgFile string) (config.Config, error) {
+	return config.ParseConfigFile(cfgFile)
 }
 
 /**
 * 消息服务consumer object
  */
-func NewQueueConsumer(topicName string, config QueueConfig, options *backend.Options) *QueueConsumerObject {
+func NewQueueConsumer(config config.Config) *QueueConsumerObject {
+	consumerObj := &QueueConsumerObject{
+		config: config,
+	}
+	return consumerObj
+}
+
+func (t *QueueConsumerObject) SetQueueAttr(queueTypeName string, topicName string, options *backend.Options) {
 	if options == nil {
 		options = backend.NewOptions()
 	}
-	consumerObj := &QueueConsumerObject{
-		topic:  topicName,
-		config: config,
-		queue:  createQueueConsumer(config, options),
-	}
-	consumerObj.SetTopic(topicName)
-	return consumerObj
+	t.SetQueueTypeName(queueTypeName, options)
+	t.SetTopic(topicName)
 }
 
 /**
 * 设置队列类型
  */
-func (t *QueueConsumerObject) SetQueueType(queueType string) {
-	t.config.Type = queueType
-	t.queue = createQueueConsumer(t.config, backend.NewOptions())
+func (t *QueueConsumerObject) SetQueueTypeName(queueTypeName string, options *backend.Options) {
+	t.queue = createQueueConsumer(t.config.GetQueueConfig(queueTypeName), options)
 }
 
 /**
 * 设置publish 主题
  */
 func (t *QueueConsumerObject) SetTopic(topicName string) {
-	t.topic = topicName
-	t.queue.SetTopic(topicName)
+	if t.queue != nil {
+		t.queue.SetTopic(topicName)
+	}
 }
 
 func (t *QueueConsumerObject) Start() {
@@ -110,36 +112,43 @@ func (t *QueueConsumerObject) AckMessage(msgId backend.MessageID) error {
 /**
 * 消息服务producer object
  */
-func NewQueueProducer(topicName string, config QueueConfig) *QueueProducerObject {
+func NewQueueProducer(config config.Config) *QueueProducerObject {
 	senderObj := &QueueProducerObject{
 		config:         config,
-		queue:          createQueueProducer(config),
 		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
 		exitChan:       make(chan int),
 	}
-	if config.Disk.Path != "" {
-		diskQueue, err := createDiskQueue(topicName, senderObj.config.Disk)
+	return senderObj
+}
+
+/*
+* 设置队列相关属性
+ */
+func (t *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName string) {
+	t.SetQueueTypeName(queueTypeName)
+	if t.config.DiskConfig.Path != "" {
+		diskQueue, err := createDiskQueue(topicName, t.config.DiskConfig)
 		if err == nil {
-			senderObj.diskQueue = diskQueue
+			t.diskQueue = diskQueue
 		}
 	}
-	senderObj.SetTopic(topicName)
-	return senderObj
+	t.SetTopic(topicName)
 }
 
 /**
 * 设置队列类型
  */
-func (t *QueueProducerObject) SetQueueType(queueType string) {
-	t.config.Type = queueType
-	t.queue = createQueueProducer(t.config)
+func (t *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
+	t.queue = createQueueProducer(t.config.GetQueueConfig(queueTypeName))
 }
 
 /**
 * 设置publish 主题
  */
 func (t *QueueProducerObject) SetTopic(topicName string) {
-	t.queue.SetTopic(topicName)
+	if t.queue != nil {
+		t.queue.SetTopic(topicName)
+	}
 }
 
 /**
@@ -268,7 +277,7 @@ func NewConsumerOptions() *backend.Options {
 	return backend.NewOptions()
 }
 
-func createDiskQueue(topicName string, config backend.DiskConfig) (*backend.DiskQueue, error) {
+func createDiskQueue(topicName string, config config.DiskConfig) (*backend.DiskQueue, error) {
 	diskQueue, err := backend.NewDiskQueue(config)
 	if err != nil {
 		return nil, err
@@ -278,19 +287,22 @@ func createDiskQueue(topicName string, config backend.DiskConfig) (*backend.Disk
 	return diskQueue, err
 }
 
-func createQueueProducer(config QueueConfig) QueueProducer {
-	if config.Type == "redis" {
-		return backend.NewRedisQueueProducer(config.Redis)
+func createQueueProducer(cfg config.QueueConfig) QueueProducer {
+	if cfg.Type == config.TYPE_REDIS {
+		return backend.NewRedisQueueProducer(cfg.Attr)
 	}
-	if config.Type == "kafka" {
-		return backend.NewKafkaQueueProducer(config.Kafka)
+	if cfg.Type == config.TYPE_KAFKA {
+		return backend.NewKafkaQueueProducer(cfg.Attr)
+	}
+	if cfg.Type == config.TYPE_MNS {
+		return backend.NewMnsQueueProducer(cfg.Attr)
 	}
 	return nil
 }
 
-func createQueueConsumer(config QueueConfig, options *backend.Options) QueueConsumer {
-	if config.Type == "redis" {
-		return backend.NewRedisQueueConsumer(config.Redis, options)
+func createQueueConsumer(cfg config.QueueConfig, options *backend.Options) QueueConsumer {
+	if cfg.Type == config.TYPE_REDIS {
+		return backend.NewRedisQueueConsumer(cfg.Attr, options)
 	}
 	return nil
 }

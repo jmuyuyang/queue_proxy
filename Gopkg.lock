@@ -42,9 +42,27 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/gogap/errors"
+  packages = ["."]
+  revision = "149c546090d0ac947ee5f6772d431e30cf0f6f3b"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/gogap/stack"
+  packages = ["."]
+  revision = "fef68dddd4f8092a1be1acacb121f847315e5c94"
+
+[[projects]]
+  branch = "master"
   name = "github.com/golang/snappy"
   packages = ["."]
   revision = "553a641470496b2327abcac10b36396bd98e45c9"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/jmuyuyang/ali_mns"
+  packages = ["."]
+  revision = "e7a7cc70efe5fb8435e7805dcd41a88be367580a"
 
 [[projects]]
   name = "github.com/jolestar/go-commons-pool"
@@ -80,9 +98,15 @@
   revision = "f58768cc1a7a7e77a3bd49e98cdd21419399b6a3"
   version = "v1.2.0"
 
+[[projects]]
+  name = "gopkg.in/yaml.v2"
+  packages = ["."]
+  revision = "7f97868eec74b32b0982dd158a51a446d1da7eb5"
+  version = "v2.1.1"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "e26b5695e5b28fc7ea8fd61489fdf6aa9005ebbcd44fda96f1c0b32480e46878"
+  inputs-digest = "73bbf6f44080f840f94619a4c11b161c99c238eff8c389dd22a292f0a737c474"
   solver-name = "gps-cdcl"
   solver-version = 1

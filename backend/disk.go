@@ -12,16 +12,10 @@ import (
 	"time"
 
 	"github.com/jmuyuyang/queue_proxy/compressor"
+	"github.com/jmuyuyang/queue_proxy/config"
 )
 
 const MaxBytesPerFile = 2 * 1024 * 1024
-
-type DiskConfig struct {
-	Path         string `yaml:"path"`
-	Prefix       string `yaml:"prefix"`
-	FlushTimeout int    `yaml:"flush_timeout"`
-	CompressType string `yaml:"compress_type"`
-}
 
 type Compressor interface {
 	Compress(string, bool) error
@@ -52,7 +46,7 @@ type DiskQueue struct {
 	logf            AppLogFunc
 }
 
-func NewDiskQueue(cfg DiskConfig) (*DiskQueue, error) {
+func NewDiskQueue(cfg config.DiskConfig) (*DiskQueue, error) {
 	d := DiskQueue{
 		writeChan:       make(chan []byte),
 		readChan:        make(chan []byte),

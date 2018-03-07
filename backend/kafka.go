@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jolestar/go-commons-pool"
 )
 
@@ -16,16 +17,10 @@ type KafkaPoolFactory struct {
 	timeout time.Duration
 }
 
-type KafkaConfig struct {
-	Bind    string `yaml:"bind"`
-	Timeout int    `yaml:"timeout"`
-	Size    int    `yaml:"size"`
-}
-
 type kafkaQueue struct {
 	pool   *pool.ObjectPool
 	topic  string
-	config KafkaConfig
+	config config.BackendConfig
 	active bool
 }
 
@@ -71,19 +66,19 @@ func (f *KafkaPoolFactory) PassivateObject(object *pool.PooledObject) error {
 	return nil
 }
 
-func createKafkaQueuePool(config KafkaConfig) *pool.ObjectPool {
+func createKafkaQueuePool(config config.BackendConfig) *pool.ObjectPool {
 	timeout := time.Duration(config.Timeout) * time.Second
 	poolFactory := &KafkaPoolFactory{
 		addr:    config.Bind,
 		timeout: timeout,
 	}
 	cfg := pool.NewDefaultPoolConfig()
-	cfg.MaxIdle = config.Size
+	cfg.MaxIdle = config.PoolSize
 	cfg.MinEvictableIdleTimeMillis = 1000 * KAFKA_POOL_IDLE_TIMEOUT //10分钟空闲时间
 	return pool.NewObjectPool(poolFactory, cfg)
 }
 
-func newKafkaQueue(config KafkaConfig) kafkaQueue {
+func newKafkaQueue(config config.BackendConfig) kafkaQueue {
 	return kafkaQueue{
 		pool:   createKafkaQueuePool(config),
 		config: config,
@@ -113,7 +108,7 @@ func (q *kafkaQueue) IsActive() bool {
 	return q.active
 }
 
-func NewKafkaQueueProducer(config KafkaConfig) *KafkaQueueProducer {
+func NewKafkaQueueProducer(config config.BackendConfig) *KafkaQueueProducer {
 	return &KafkaQueueProducer{
 		kafkaQueue: newKafkaQueue(config),
 	}

@@ -4,6 +4,12 @@ const (
 	ClientIDLength = 16
 )
 
+type QueueConfig struct {
+	Name string                 `yaml:"name"`
+	Type string                 `yaml:"type"`
+	Attr map[string]interface{} `yaml:"attr"`
+}
+
 type MessageID string
 
 type Message struct {

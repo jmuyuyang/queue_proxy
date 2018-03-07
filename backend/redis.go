@@ -7,6 +7,7 @@ import (
 	"time"
 
 	rd "github.com/garyburd/redigo/redis"
+	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/util"
 	"github.com/satori/go.uuid"
 )
@@ -20,16 +21,9 @@ const (
 
 type redisQueue struct {
 	pool   *rd.Pool
-	config RedisConfig
+	config config.BackendConfig
 	topic  string
 	active bool
-}
-
-type RedisConfig struct {
-	Bind        string `yaml:"bind"`
-	Timeout     int    `yaml:"timeout"`
-	Size        int    `yaml:"size"`
-	MaxQueueLen int    `yaml:"max_queue_len"`
 }
 
 type RedisQueueProducer struct {
@@ -75,10 +69,10 @@ func createRedisQueuePool(host string, connTimeout, idleTimeout time.Duration, m
 	return pool
 }
 
-func newRedisQueue(config RedisConfig) redisQueue {
+func newRedisQueue(config config.BackendConfig) redisQueue {
 	timeout := time.Duration(config.Timeout) * time.Second
 	return redisQueue{
-		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.Size),
+		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.PoolSize),
 		config: config,
 		active: true,
 	}
@@ -128,21 +122,25 @@ func (q *redisQueue) checkConnActive() bool {
 * 检查队列长度
  */
 func (q *redisQueue) checkQueueLen() bool {
-	conn := q.pool.Get()
-	defer conn.Close()
-	queueLen, err := rd.Int(conn.Do("LLEN", q.topic))
-	if err != nil {
-		return false
-	} else {
-		if q.config.MaxQueueLen > 0 && queueLen > q.config.MaxQueueLen {
+	maxQueueLen, ok := q.config.Attr["max_queue_len"]
+	if ok {
+		conn := q.pool.Get()
+		defer conn.Close()
+		queueLen, err := rd.Int(conn.Do("LLEN", q.topic))
+		if err != nil {
 			return false
 		} else {
-			return true
+			if queueLen > maxQueueLen.(int) {
+				return false
+			} else {
+				return true
+			}
 		}
 	}
+	return false
 }
 
-func NewRedisQueueProducer(config RedisConfig) *RedisQueueProducer {
+func NewRedisQueueProducer(config config.BackendConfig) *RedisQueueProducer {
 	return &RedisQueueProducer{
 		redisQueue: newRedisQueue(config),
 	}
@@ -201,7 +199,7 @@ func (q *RedisPipelineProducer) Close() error {
 	return q.Flush()
 }
 
-func NewRedisQueueConsumer(config RedisConfig, options *Options) *RedisQueueConsumer {
+func NewRedisQueueConsumer(config config.BackendConfig, options *Options) *RedisQueueConsumer {
 	pqSize := int(math.Max(1, float64(options.MemQueueSize)/2))
 	clientId := uuid.NewV4()
 	return &RedisQueueConsumer{

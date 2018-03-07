@@ -22,15 +22,21 @@
 
 ### 配置说明
 ```
-  type: kafka
-  redis:
-    bind: 127.0.0.1:6379
-    timeout: 3
-    size: 5 //连接池长度
-  kafka:
-    bind: 172.16.2.216:9092
-    timeout: 20
-    size: 5 //连接池长度
+  queue:
+    - 
+	  name: "hlg-kafka"
+	  type: kafka
+	  attr:
+	    bind: 172.16.2.216:9092
+		timeout: 3
+		pool_size: 5
+	-
+	  name: "hlg-redis"
+	  type: redis
+	  attr:
+	    bind: 127.0.0.1:6379
+		timeout: 3
+	    pool_size: 5
   disk:
     path: "./data"
     prefix: "logcenter-proxy"
@@ -42,17 +48,17 @@
 ```
     import queue "github.com/jmuyuyang/queue_proxy"
     val config queue.QueueConfig
-    yaml.Unmarshal([]byte(config), &config)
-    queue.NewQueueProducer(topicName, config)
-    queue.SetQueueType("kafka")
+    config = queue.ParseConfigFile(cfgFile)
+    queue.NewQueueProducer(config)
+	queue.SetQueueAttr("hlg-redis","logcenter")
     queue.Start()
 
     queue.SendMessage(dateByte)
     queue.SetRateLimit(ratePerSecond) //限制限流(每秒流速)
     queue.Stop()
 	
-    queue.NewQueueConsumer(topicName, config)
-    queue.SetQueueType("kafka")
+    queue.NewQueueConsumer(config)
+    queue.SetQueueAttr("hlg-kafka","logcenter")
     queue.Start()
     msg := <-queue.GetMessageChan()
 ```
