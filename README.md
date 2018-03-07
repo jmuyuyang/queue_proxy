@@ -24,19 +24,19 @@
 ```
   queue:
     - 
-	  name: "hlg-kafka"
-	  type: kafka
-	  attr:
-	    bind: 172.16.2.216:9092
-		timeout: 3
-		pool_size: 5
-	-
-	  name: "hlg-redis"
-	  type: redis
-	  attr:
-	    bind: 127.0.0.1:6379
-		timeout: 3
-	    pool_size: 5
+      name: "hlg-kafka"
+      type: kafka
+      attr:
+        bind: 172.16.2.216:9092
+        timeout: 3
+        pool_size: 5
+    -
+      name: "hlg-redis"
+      type: redis
+      attr:
+        bind: 127.0.0.1:6379
+        timeout: 3
+        pool_size: 5
   disk:
     path: "./data"
     prefix: "logcenter-proxy"
