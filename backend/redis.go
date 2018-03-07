@@ -82,6 +82,10 @@ func (q *redisQueue) SetTopic(topic string) {
 	q.topic = topic
 }
 
+func (q *redisQueue) GetTopic() string {
+	return q.topic
+}
+
 func (q *redisQueue) IsActive() bool {
 	return q.active
 }

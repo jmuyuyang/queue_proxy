@@ -14,6 +14,7 @@ const CHECK_QUEUE_CHAIN_BUFFER = 3
 type QueueProducer interface {
 	StartPipeline() (backend.PipelineQueueProducer, error)
 	SetTopic(string)
+	GetTopic() string
 	SendMessage([]byte) error
 	CheckActive() bool
 	IsActive() bool
@@ -143,12 +144,19 @@ func (t *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
 }
 
 /**
-* 设置publish 主题
+* 设置queue topic
  */
 func (t *QueueProducerObject) SetTopic(topicName string) {
 	if t.queue != nil {
 		t.queue.SetTopic(topicName)
 	}
+}
+
+/**
+* 获取queue topic
+ */
+func (t *QueueProducerObject) GetTopic() string {
+	return t.queue.GetTopic()
 }
 
 /**

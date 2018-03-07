@@ -48,6 +48,10 @@ func (q *mnsQueue) SetTopic(topic string) {
 	q.topic = topic
 }
 
+func (q *mnsQueue) GetTopic() string {
+	return q.topic
+}
+
 func (q *mnsQueue) IsActive() bool {
 	return q.active
 }

@@ -90,6 +90,10 @@ func (q *kafkaQueue) SetTopic(topic string) {
 	q.topic = topic
 }
 
+func (q *kafkaQueue) GetTopic() string {
+	return q.topic
+}
+
 /**
 * 检测队列是否活跃
  */
