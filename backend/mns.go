@@ -128,7 +128,7 @@ func (q *MnsPipelineProducer) Close() error {
  */
 func (q *MnsPipelineProducer) queueLoop() {
 	var flushDataBuffer bool = false
-	var flushTicker time.Ticker = time.NewTicker(time.Duration(MESSAGE_BUFFER_FLUSH_TIMEOUT) * time.Second)
+	flushTicker := time.NewTicker(time.Duration(MESSAGE_BUFFER_FLUSH_TIMEOUT) * time.Second)
 	for {
 		select {
 		case msg := <-q.messageChan:
