@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"sync"
 	"time"
 
 	"github.com/jmuyuyang/queue_proxy/backend"
@@ -30,12 +31,14 @@ type QueueConsumer interface {
 }
 
 type QueueProducerObject struct {
+	sync.RWMutex
 	config         config.Config
 	queue          QueueProducer
 	diskQueue      *backend.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
 	exitChan       chan int
+	pauseChan      chan bool
 }
 
 type QueueConsumerObject struct {
@@ -118,6 +121,7 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 		config:         config,
 		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
 		exitChan:       make(chan int),
+		pauseChan:      make(chan bool),
 	}
 	return senderObj
 }
@@ -125,119 +129,158 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 /*
 * 设置队列相关属性
  */
-func (t *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName string) {
-	t.SetQueueTypeName(queueTypeName)
-	if t.config.DiskConfig.Path != "" {
-		diskQueue, err := createDiskQueue(topicName, t.config.DiskConfig)
+func (q *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName string) {
+	if q.config.DiskConfig.Path != "" {
+		diskQueue, err := createDiskQueue(topicName, q.config.DiskConfig)
 		if err == nil {
-			t.diskQueue = diskQueue
+			q.diskQueue = diskQueue
 		}
 	}
-	t.SetTopic(topicName)
+	q.SetQueueTypeName(queueTypeName)
+	q.SetTopic(topicName)
 }
 
 /**
 * 设置队列类型
  */
-func (t *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
-	t.queue = createQueueProducer(t.config.GetQueueConfig(queueTypeName))
+func (q *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
+	q.Lock()
+	defer q.Unlock()
+	q.doPause(true)
+	q.queue = createQueueProducer(q.config.GetQueueConfig(queueTypeName))
+	q.doPause(false)
 }
 
 /**
 * 设置queue topic
  */
-func (t *QueueProducerObject) SetTopic(topicName string) {
-	if t.queue != nil {
-		t.queue.SetTopic(topicName)
+func (q *QueueProducerObject) SetTopic(topicName string) {
+	if q.queue != nil {
+		q.queue.SetTopic(topicName)
 	}
 }
 
 /**
 * 获取queue topic
  */
-func (t *QueueProducerObject) GetTopic() string {
-	return t.queue.GetTopic()
+func (q *QueueProducerObject) GetTopic() string {
+	return q.queue.GetTopic()
 }
 
 /**
 * disk queue 启动
  */
-func (t *QueueProducerObject) Start() {
-	go t.startBackend()
+func (q *QueueProducerObject) Start() {
+	go q.startBackend()
+}
+
+/**
+* 停止队列sender运行
+ */
+func (q *QueueProducerObject) Stop() {
+	q.Lock()
+	defer q.Unlock()
+	close(q.exitChan)
+	q.diskQueue.Stop()
+}
+
+/**
+* disk queue暂停/重启
+ */
+func (q *QueueProducerObject) doPause(pause bool) {
+	if q.diskQueue != nil {
+		select {
+		case q.pauseChan <- pause:
+		default:
+		}
+	}
 }
 
 /**
 * 设置限速
  */
-func (t *QueueProducerObject) SetRateLimit(ratePerSecond int) {
-	if t.rateController == nil {
-		t.rateController = rateio.NewController(ratePerSecond)
+func (q *QueueProducerObject) SetRateLimit(ratePerSecond int) {
+	if q.rateController == nil {
+		q.Lock()
+		defer q.Unlock()
+		q.doPause(true)
+		q.rateController = rateio.NewController(ratePerSecond)
+		q.rateController.Start()
+		q.doPause(false)
 	} else {
-		t.rateController.SetRateLimit(ratePerSecond)
+		q.rateController.SetRateLimit(ratePerSecond)
 	}
 }
 
 /**
 * 关闭限速
  */
-func (t *QueueProducerObject) DisableRateLimit() {
-	t.rateController.Close()
+func (q *QueueProducerObject) DisableRateLimit() {
+	q.Lock()
+	defer q.Unlock()
+	q.doPause(true)
+	q.rateController.Stop()
+	q.rateController = nil
+	q.doPause(false)
 }
 
 /**
 * 发送消息
  */
-func (sd *QueueProducerObject) SendMessage(data []byte) error {
+func (q *QueueProducerObject) SendMessage(data []byte) error {
+	q.RLock()
 	addBackendStore := false
 	var err error
-	if sd.queue != nil && sd.queue.IsActive() {
-		if sd.rateController != nil && !sd.rateController.Assign(false) {
+	if q.queue != nil && q.queue.IsActive() {
+		if q.rateController != nil && !q.rateController.Assign(false) {
 			//超过限速
 			addBackendStore = true
 		} else {
-			err = sd.queue.SendMessage(data)
+			err = q.queue.SendMessage(data)
 			if err != nil {
 				//触发队列检测
-				sd.checkQueueChan <- 1
+				q.checkQueueChan <- 1
 				addBackendStore = true
 			}
 		}
 	} else {
 		addBackendStore = true
 	}
+
+	q.RUnlock()
 	if addBackendStore {
 		//添加到灾备磁盘队列
-		if sd.diskQueue != nil {
-			sd.diskQueue.SendMessage(data)
+		if q.diskQueue != nil {
+			q.diskQueue.SendMessage(data)
 		}
 	}
 	return err
 }
 
-func (sd *QueueProducerObject) startBackend() {
-	if sd.diskQueue == nil {
+func (q *QueueProducerObject) startBackend() {
+	if q.diskQueue == nil {
 		return
 	}
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
-	r := sd.diskQueue.GetMessageChan()
+	r := q.diskQueue.GetMessageChan()
 	var pipelineQueue backend.PipelineQueueProducer
 	var err error
 	for {
 		select {
 		case dataByte := <-r:
 			if pipelineQueue == nil {
-				pipelineQueue, err = sd.queue.StartPipeline()
+				pipelineQueue, err = q.queue.StartPipeline()
 			}
 			if err != nil {
 				//创建pipeline队列失败,则直接禁止读取disk queue
-				sd.diskQueue.SendMessage(dataByte)
+				q.diskQueue.SendMessage(dataByte)
 				pipelineQueue = nil
 				r = nil
 			}
 			if pipelineQueue != nil {
-				if sd.rateController != nil {
+				if q.rateController != nil {
 					//等待限速
-					sd.rateController.Assign(true)
+					q.rateController.Assign(true)
 				}
 				err := pipelineQueue.SendMessage(dataByte)
 				if err != nil {
@@ -250,20 +293,29 @@ func (sd *QueueProducerObject) startBackend() {
 				pipelineQueue.Close()
 				pipelineQueue = nil
 			}
-			if sd.queue != nil && sd.queue.CheckActive() {
-				r = sd.diskQueue.GetMessageChan()
+			if q.queue != nil && q.queue.CheckActive() {
+				r = q.diskQueue.GetMessageChan()
 			} else {
 				r = nil
 			}
-		case <-sd.checkQueueChan:
-			if sd.queue == nil || sd.queue.IsActive() && !sd.queue.CheckActive() {
+		case pause := <-q.pauseChan:
+			if pipelineQueue != nil {
+				pipelineQueue.Close()
+				pipelineQueue = nil
+			}
+			if pause {
+				//禁止从 diskQueue 读数据
+				r = nil
+			}
+		case <-q.checkQueueChan:
+			if q.queue == nil || q.queue.IsActive() && !q.queue.CheckActive() {
 				if pipelineQueue != nil {
 					pipelineQueue.Close()
 					pipelineQueue = nil
 				}
 				r = nil
 			}
-		case <-sd.exitChan:
+		case <-q.exitChan:
 			if pipelineQueue != nil {
 				pipelineQueue.Close()
 			}
@@ -272,14 +324,6 @@ func (sd *QueueProducerObject) startBackend() {
 	}
 exit:
 	checkQueueTicker.Stop()
-}
-
-/**
-* 停止队列sender运行
- */
-func (sd *QueueProducerObject) Stop() {
-	close(sd.exitChan)
-	sd.diskQueue.Stop()
 }
 
 func NewConsumerOptions() *backend.Options {

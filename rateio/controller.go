@@ -10,33 +10,31 @@ var Window = 50 * time.Millisecond
 
 // Controller can limit multiple io.Reader(or io.Writer) within specific rate.
 type Controller struct {
-	capacity      int
-	threshold     int
-	cond          *sync.Cond
-	done          chan struct{}
-	ratePerSecond int
-	closeOnce     *sync.Once
-	enable        int32
+	capacity        int
+	availableTokens int
+	cond            *sync.Cond
+	reset           chan int
+	done            chan int
+	enable          int32
 }
 
 func NewController(ratePerSecond int) *Controller {
 	capacity := ratePerSecond * int(Window) / int(time.Second)
 	self := &Controller{
-		ratePerSecond: ratePerSecond,
-		capacity:      capacity,
-		cond:          sync.NewCond(new(sync.Mutex)),
-		done:          make(chan struct{}, 1),
-		closeOnce:     &sync.Once{},
-		enable:        int32(0),
+		capacity:        capacity,
+		availableTokens: capacity,
+		cond:            sync.NewCond(new(sync.Mutex)),
+		reset:           make(chan int),
+		done:            make(chan int),
+		enable:          int32(0),
 	}
-	go self.run(capacity)
 	return self
 }
 
 func (self *Controller) Start() {
 	if atomic.LoadInt32(&self.enable) == 0 {
-		self.closeOnce = &sync.Once{}
-		go self.run(self.capacity)
+		go self.run()
+		atomic.StoreInt32(&self.enable, int32(1))
 	}
 }
 
@@ -44,14 +42,12 @@ func (self *Controller) GetRateLimit() int {
 	return int(self.capacity * int(time.Second) / int(Window))
 }
 
+/**
+* 重置rate per second
+ */
 func (self *Controller) SetRateLimit(ratePerSecond int) {
-	if atomic.LoadInt32(&self.enable) == int32(1) {
-		//开启状态先关闭
-		self.Close()
-	}
-	self.closeOnce = &sync.Once{}
 	capacity := ratePerSecond * int(Window) / int(time.Second)
-	go self.run(capacity)
+	self.reset <- capacity
 }
 
 func (self *Controller) Assign(wait bool) bool {
@@ -59,44 +55,41 @@ func (self *Controller) Assign(wait bool) bool {
 		return true
 	}
 	self.cond.L.Lock()
-	for self.capacity == 0 {
+	for self.availableTokens == 0 {
 		if wait {
-			if atomic.LoadInt32(&self.enable) == int32(0) {
-				return true
-			}
 			self.cond.Wait()
 		} else {
 			self.cond.L.Unlock()
 			return false
 		}
 	}
-	self.capacity -= 1
+	self.availableTokens -= 1
 	self.cond.L.Unlock()
 	return true
 }
 
-func (self *Controller) run(capacity int) {
-	atomic.StoreInt32(&self.enable, int32(1))
+func (self *Controller) run() {
 	t := time.NewTicker(Window)
 	for {
 		select {
 		case <-t.C:
 			self.cond.L.Lock()
-			self.capacity = capacity
+			self.availableTokens = self.capacity
 			self.cond.L.Unlock()
 			self.cond.Broadcast()
+		case capacity := <-self.reset:
+			self.cond.L.Lock()
+			self.capacity = capacity
+			self.cond.L.Unlock()
 		case <-self.done:
-			t.Stop()
 			return
 		}
 	}
 }
 
-func (self *Controller) Close() {
+func (self *Controller) Stop() {
 	if atomic.LoadInt32(&self.enable) == int32(1) {
-		self.closeOnce.Do(func() {
-			self.done <- struct{}{}
-			atomic.StoreInt32(&self.enable, int32(0))
-		})
+		self.done <- 1
+		atomic.StoreInt32(&self.enable, int32(0))
 	}
 }
