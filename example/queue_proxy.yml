@@ -1,0 +1,19 @@
+queue:
+  -
+    name: "example-redis"
+    type: redis
+    attr:
+      bind: 127.0.0.1:6379
+      timeout: 3
+      pool_size: 5
+  -
+    name: "example-kafka"
+    type: kafka
+    attr:
+      bind: 127.0.0.1:9092
+      timeout: 1
+      pool_size: 5
+disk:
+  path: "../data"
+  prefix: "dataProxy"
+  flush_timeout: 2

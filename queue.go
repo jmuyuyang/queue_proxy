@@ -262,8 +262,11 @@ func (q *QueueProducerObject) startBackend() {
 		return
 	}
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
-	r := q.diskQueue.GetMessageChan()
 	var pipelineQueue backend.PipelineQueueProducer
+	var r chan []byte
+	if q.queue != nil {
+		r = q.diskQueue.GetMessageChan()
+	}
 	var err error
 	for {
 		select {
