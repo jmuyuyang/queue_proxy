@@ -25,5 +25,3 @@ type PipelineQueueProducer interface {
 	Flush() error
 	Close() error
 }
-
-type AppLogFunc func(level string, logData string, args ...interface{})

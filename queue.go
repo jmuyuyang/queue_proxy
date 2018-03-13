@@ -7,6 +7,7 @@ import (
 	"github.com/jmuyuyang/queue_proxy/backend"
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/rateio"
+	"github.com/jmuyuyang/queue_proxy/util"
 )
 
 const CHECK_QUEUE_TIMEOUT = 5 * time.Second
@@ -39,6 +40,7 @@ type QueueProducerObject struct {
 	checkQueueChan chan int
 	exitChan       chan int
 	pauseChan      chan bool
+	logFunc        util.LoggerFuncHandler
 }
 
 type QueueConsumerObject struct {
@@ -151,6 +153,13 @@ func (q *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
 	q.doPause(false)
 }
 
+func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
+	q.logFunc = logger
+	if q.diskQueue != nil {
+		q.diskQueue.SetLogger(q.logFunc)
+	}
+}
+
 /**
 * 设置queue topic
  */
@@ -239,6 +248,7 @@ func (q *QueueProducerObject) SendMessage(data []byte) error {
 			err = q.queue.SendMessage(data)
 			if err != nil {
 				//触发队列检测
+				//q.logFunc(util.InfoStr, err.Error())
 				q.checkQueueChan <- 1
 				addBackendStore = true
 			}

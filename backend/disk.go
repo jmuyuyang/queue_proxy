@@ -13,6 +13,7 @@ import (
 
 	"github.com/jmuyuyang/queue_proxy/compressor"
 	"github.com/jmuyuyang/queue_proxy/config"
+	"github.com/jmuyuyang/queue_proxy/util"
 )
 
 const MaxBytesPerFile = 2 * 1024 * 1024
@@ -43,7 +44,7 @@ type DiskQueue struct {
 	syncTimeout     time.Duration
 	needSync        bool
 	compressor      Compressor
-	logf            AppLogFunc
+	logf            util.LoggerFuncHandler
 }
 
 func NewDiskQueue(cfg config.DiskConfig) (*DiskQueue, error) {
@@ -75,7 +76,7 @@ func (d *DiskQueue) SetTopic(topicName string) {
 	d.name = topicName
 }
 
-func (d *DiskQueue) SetLogger(logger AppLogFunc) {
+func (d *DiskQueue) SetLogger(logger util.LoggerFuncHandler) {
 	d.logf = logger
 }
 
@@ -115,7 +116,7 @@ func (d *DiskQueue) GetMessageChan() chan []byte {
 
 func (d *DiskQueue) logError(err error) {
 	if d.logf != nil {
-		d.logf("ERROR", err.Error())
+		d.logf(util.ErrorLvl, err.Error())
 	}
 }
 
