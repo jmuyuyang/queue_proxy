@@ -27,4 +27,13 @@ var levelToStringMap = map[LogLevel]string{
 	CriticalLvl: CriticalStr,
 }
 
+func (l LogLevel) String() string {
+	levelStr, ok := levelToStringMap[l]
+	if ok {
+		return levelStr
+	}
+
+	return ""
+}
+
 type LoggerFuncHandler func(level LogLevel, message string)

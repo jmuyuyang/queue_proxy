@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -124,6 +125,7 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
 		exitChan:       make(chan int),
 		pauseChan:      make(chan bool),
+		logFunc:        func(level util.LogLevel, message string) {},
 	}
 	return senderObj
 }
@@ -154,7 +156,11 @@ func (q *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
 }
 
 func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
-	q.logFunc = logger
+	topic := q.GetTopic()
+	q.logFunc = func(level util.LogLevel, message string) {
+		msg := fmt.Sprintf("backend queue topic:%s;%s", topic, message)
+		logger(level, msg)
+	}
 	if q.diskQueue != nil {
 		q.diskQueue.SetLogger(q.logFunc)
 	}
@@ -173,7 +179,10 @@ func (q *QueueProducerObject) SetTopic(topicName string) {
 * 获取queue topic
  */
 func (q *QueueProducerObject) GetTopic() string {
-	return q.queue.GetTopic()
+	if q.queue != nil {
+		return q.queue.GetTopic()
+	}
+	return ""
 }
 
 /**
@@ -248,7 +257,7 @@ func (q *QueueProducerObject) SendMessage(data []byte) error {
 			err = q.queue.SendMessage(data)
 			if err != nil {
 				//触发队列检测
-				//q.logFunc(util.InfoStr, err.Error())
+				q.logFunc(util.InfoLvl, "add backend queue error:"+err.Error())
 				q.checkQueueChan <- 1
 				addBackendStore = true
 			}
@@ -307,8 +316,10 @@ func (q *QueueProducerObject) startBackend() {
 				pipelineQueue = nil
 			}
 			if q.queue != nil && q.queue.CheckActive() {
+				q.logFunc(util.InfoLvl, "checked connected successed")
 				r = q.diskQueue.GetMessageChan()
 			} else {
+				q.logFunc(util.InfoLvl, "checked connected failed")
 				r = nil
 			}
 		case pause := <-q.pauseChan:
@@ -322,6 +333,7 @@ func (q *QueueProducerObject) startBackend() {
 			}
 		case <-q.checkQueueChan:
 			if q.queue == nil || q.queue.IsActive() && !q.queue.CheckActive() {
+				q.logFunc(util.InfoLvl, "checked connected failed")
 				if pipelineQueue != nil {
 					pipelineQueue.Close()
 					pipelineQueue = nil

@@ -114,12 +114,6 @@ func (d *DiskQueue) GetMessageChan() chan []byte {
 	return d.readChan
 }
 
-func (d *DiskQueue) logError(err error) {
-	if d.logf != nil {
-		d.logf(util.ErrorLvl, err.Error())
-	}
-}
-
 func (d *DiskQueue) createDataPath() error {
 	_, err := os.Stat(d.dataPath)
 	if err == nil {
@@ -142,7 +136,7 @@ func (d *DiskQueue) ioLoop() {
 		if d.needSync {
 			err = d.sync()
 			if err != nil {
-				d.logError(err)
+				d.logf(util.ErrorLvl, err.Error())
 			}
 		}
 
@@ -150,7 +144,7 @@ func (d *DiskQueue) ioLoop() {
 			if d.nextReadPos == d.readPos {
 				dataRead, err = d.readOne()
 				if err != nil {
-					d.logError(err)
+					d.logf(util.ErrorLvl, err.Error())
 					continue
 				}
 				r = d.readChan
@@ -251,7 +245,7 @@ func (d *DiskQueue) moveForward() {
 		fn := d.fileName(oldReadFileNum)
 		err := os.Remove(fn)
 		if err != nil {
-			d.logError(err)
+			d.logf(util.ErrorLvl, err.Error())
 		}
 
 		if d.compressor != nil && d.readFileNum+1 < d.writeFileNum {
@@ -259,7 +253,7 @@ func (d *DiskQueue) moveForward() {
 			go func(file string) {
 				err := d.compressor.Decompress(file, true)
 				if err != nil {
-					d.logError(err)
+					d.logf(util.ErrorLvl, err.Error())
 				}
 			}(d.fileName(d.readFileNum + 1))
 		}
@@ -311,7 +305,7 @@ func (d *DiskQueue) writeOne(data []byte) error {
 		d.writePos = 0
 		err = d.sync()
 		if err != nil {
-			d.logError(err)
+			d.logf(util.ErrorLvl, err.Error())
 		}
 
 		if d.writeFile != nil {
@@ -324,7 +318,7 @@ func (d *DiskQueue) writeOne(data []byte) error {
 			go func(file string) {
 				err := d.compressor.Compress(file, true)
 				if err != nil {
-					d.logError(err)
+					d.logf(util.ErrorLvl, err.Error())
 				}
 			}(d.fileName(d.writeFileNum - 1))
 		}
