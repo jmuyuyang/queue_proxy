@@ -54,9 +54,12 @@ func (c Config) GetDiskConfig() DiskConfig {
 * 解析queue config
  */
 func ParseConfigFile(cfgFile string) (Config, error) {
-	data, _ := ioutil.ReadFile(cfgFile)
 	cfg := Config{}
-	err := yaml.Unmarshal(data, &cfg)
+	data, err := ioutil.ReadFile(cfgFile)
+	if err != nil {
+		return cfg, err
+	}
+	err = yaml.Unmarshal(data, &cfg)
 	if err != nil {
 		return cfg, err
 	}

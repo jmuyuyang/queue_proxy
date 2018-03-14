@@ -316,7 +316,7 @@ func (q *QueueProducerObject) startBackend() {
 				pipelineQueue = nil
 			}
 			if q.queue != nil && q.queue.CheckActive() {
-				q.logFunc(util.InfoLvl, "checked connected successed")
+				q.logFunc(util.DebugLvl, "checked connected successed")
 				r = q.diskQueue.GetMessageChan()
 			} else {
 				q.logFunc(util.InfoLvl, "checked connected failed")
