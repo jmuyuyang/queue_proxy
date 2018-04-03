@@ -321,7 +321,7 @@ func (q *QueueProducerObject) startBackend() {
 				if q.queue.CheckActive() {
 					q.logFunc(util.DebugLvl, "checked connected successed")
 					if r == nil {
-						r = q.diskQueue.GetMessage()
+						r = q.diskQueue.GetMessageChan()
 					}
 				} else {
 					q.logFunc(util.InfoLvl, "checked connected failed")
