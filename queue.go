@@ -247,12 +247,12 @@ func (q *QueueProducerObject) DisableRateLimit() {
  */
 func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 	var addBackendStore bool = false
+	var err error
 	if async {
 		addBackendStore = true
 	} else {
 		q.RLock()
 		addBackendStore = false
-		var err error
 		if q.queue != nil && q.queue.IsActive() {
 			if q.rateController != nil && !q.rateController.Assign(false) {
 				//超过限速
@@ -287,9 +287,6 @@ func (q *QueueProducerObject) startBackend() {
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	var pipelineQueue backend.PipelineQueueProducer
 	var r chan []byte
-	if q.queue != nil {
-		r = q.diskQueue.GetMessageChan()
-	}
 	var err error
 	for {
 		select {
@@ -316,15 +313,37 @@ func (q *QueueProducerObject) startBackend() {
 			}
 		case <-checkQueueTicker.C:
 			if pipelineQueue != nil {
+				//每次定期队列检测，强制关闭一次pipeline queue
 				pipelineQueue.Close()
 				pipelineQueue = nil
 			}
-			if q.queue != nil && q.queue.CheckActive() {
-				q.logFunc(util.DebugLvl, "checked connected successed")
-				r = q.diskQueue.GetMessageChan()
-			} else {
-				q.logFunc(util.InfoLvl, "checked connected failed")
-				r = nil
+			if q.queue != nil {
+				if q.queue.CheckActive() {
+					q.logFunc(util.DebugLvl, "checked connected successed")
+					if r == nil {
+						r = q.diskQueue.GetMessage()
+					}
+				} else {
+					q.logFunc(util.InfoLvl, "checked connected failed")
+					r = nil
+				}
+			}
+		case <-q.checkQueueChan:
+			if q.queue != nil && q.queue.IsActive() {
+				//主动发起的队列检测，仅当queue is active时才触发
+				if q.queue.CheckActive() {
+					q.logFunc(util.DebugLvl, "checked connected successed")
+					if r == nil {
+						r = q.diskQueue.GetMessageChan()
+					}
+				} else {
+					q.logFunc(util.InfoLvl, "checked connected failed")
+					if pipelineQueue != nil {
+						pipelineQueue.Close()
+						pipelineQueue = nil
+					}
+					r = nil
+				}
 			}
 		case pause := <-q.pauseChan:
 			if pipelineQueue != nil {
@@ -333,15 +352,6 @@ func (q *QueueProducerObject) startBackend() {
 			}
 			if pause {
 				//禁止从 diskQueue 读数据
-				r = nil
-			}
-		case <-q.checkQueueChan:
-			if q.queue == nil || q.queue.IsActive() && !q.queue.CheckActive() {
-				q.logFunc(util.InfoLvl, "checked connected failed")
-				if pipelineQueue != nil {
-					pipelineQueue.Close()
-					pipelineQueue = nil
-				}
 				r = nil
 			}
 		case <-q.exitChan:
