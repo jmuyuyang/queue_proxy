@@ -245,28 +245,32 @@ func (q *QueueProducerObject) DisableRateLimit() {
 /**
 * 发送消息
  */
-func (q *QueueProducerObject) SendMessage(data []byte) error {
-	q.RLock()
-	addBackendStore := false
-	var err error
-	if q.queue != nil && q.queue.IsActive() {
-		if q.rateController != nil && !q.rateController.Assign(false) {
-			//超过限速
-			addBackendStore = true
-		} else {
-			err = q.queue.SendMessage(data)
-			if err != nil {
-				//触发队列检测
-				q.logFunc(util.InfoLvl, "add backend queue error:"+err.Error())
-				q.checkQueueChan <- 1
-				addBackendStore = true
-			}
-		}
-	} else {
+func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
+	var addBackendStore bool = false
+	if async {
 		addBackendStore = true
+	} else {
+		q.RLock()
+		addBackendStore = false
+		var err error
+		if q.queue != nil && q.queue.IsActive() {
+			if q.rateController != nil && !q.rateController.Assign(false) {
+				//超过限速
+				addBackendStore = true
+			} else {
+				err = q.queue.SendMessage(data)
+				if err != nil {
+					//触发队列检测
+					q.logFunc(util.InfoLvl, "add backend queue error:"+err.Error())
+					q.checkQueueChan <- 1
+					addBackendStore = true
+				}
+			}
+		} else {
+			addBackendStore = true
+		}
+		q.RUnlock()
 	}
-
-	q.RUnlock()
 	if addBackendStore {
 		//添加到灾备磁盘队列
 		if q.diskQueue != nil {
