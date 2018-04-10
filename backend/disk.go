@@ -16,7 +16,7 @@ import (
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
-const MaxBytesPerFile = 2 * 1024 * 1024
+const MaxBytesPerFile = 500 * 1024
 
 type Compressor interface {
 	Compress(string, bool) error
@@ -145,6 +145,13 @@ func (d *DiskQueue) ioLoop() {
 				dataRead, err = d.readOne()
 				if err != nil {
 					d.logf(util.ErrorLvl, err.Error())
+					if os.IsNotExist(err) {
+						//文件不存在,则递增需要读取的文件
+						d.readFileNum++
+						d.readPos = 0
+						d.nextReadFileNum = d.readFileNum
+						d.nextReadPos = d.readPos
+					}
 					continue
 				}
 				r = d.readChan
