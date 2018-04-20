@@ -4,6 +4,8 @@ const (
 	ClientIDLength = 16
 )
 
+var PanicHandler func(interface{})
+
 type QueueConfig struct {
 	Name string                 `yaml:"name"`
 	Type string                 `yaml:"type"`

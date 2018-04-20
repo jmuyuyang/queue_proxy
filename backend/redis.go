@@ -199,8 +199,16 @@ func (q *RedisPipelineProducer) Flush() error {
 }
 
 func (q *RedisPipelineProducer) Close() error {
-	defer q.conn.Close()
-	return q.Flush()
+	defer func() {
+		if PanicHandler != nil {
+			handler := PanicHandler
+			if err := recover(); err != nil {
+				handler(err)
+			}
+		}
+	}()
+	q.Flush()
+	return q.conn.Close()
 }
 
 func NewRedisQueueConsumer(config config.BackendConfig, options *Options) *RedisQueueConsumer {

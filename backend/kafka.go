@@ -113,9 +113,13 @@ func (q *kafkaQueue) IsActive() bool {
 }
 
 func NewKafkaQueueProducer(config config.BackendConfig) *KafkaQueueProducer {
-	return &KafkaQueueProducer{
+	q := KafkaQueueProducer{
 		kafkaQueue: newKafkaQueue(config),
 	}
+	if PanicHandler != nil {
+		sarama.PanicHandler = PanicHandler
+	}
+	return &q
 }
 
 func (q *KafkaQueueProducer) SendMessage(data []byte) error {
