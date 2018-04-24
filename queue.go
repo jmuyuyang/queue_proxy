@@ -356,13 +356,24 @@ func (q *QueueProducerObject) startBackend() {
 			}
 		case <-q.exitChan:
 			if pipelineQueue != nil {
-				pipelineQueue.Close()
+				q.withRecover(func() {
+					pipelineQueue.Close()
+				})
 			}
 			goto exit
 		}
 	}
 exit:
 	checkQueueTicker.Stop()
+}
+
+func (q *QueueProducerObject) withRecover(handler func()) {
+	defer func() {
+		if err := recover(); err != nil {
+			q.logFunc(util.ErrorLvl, "checked connected successed")
+		}
+	}()
+	handler()
 }
 
 func NewConsumerOptions() *backend.Options {

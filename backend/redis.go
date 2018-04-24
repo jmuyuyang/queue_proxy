@@ -141,7 +141,8 @@ func (q *redisQueue) checkQueueLen() bool {
 			}
 		}
 	}
-	return false
+	//未设置max_queue_len,则不作队列超载检测
+	return true
 }
 
 func NewRedisQueueProducer(config config.BackendConfig) *RedisQueueProducer {
@@ -199,14 +200,6 @@ func (q *RedisPipelineProducer) Flush() error {
 }
 
 func (q *RedisPipelineProducer) Close() error {
-	defer func() {
-		if PanicHandler != nil {
-			handler := PanicHandler
-			if err := recover(); err != nil {
-				handler(err)
-			}
-		}
-	}()
 	q.Flush()
 	return q.conn.Close()
 }

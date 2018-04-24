@@ -116,9 +116,6 @@ func NewKafkaQueueProducer(config config.BackendConfig) *KafkaQueueProducer {
 	q := KafkaQueueProducer{
 		kafkaQueue: newKafkaQueue(config),
 	}
-	if PanicHandler != nil {
-		sarama.PanicHandler = PanicHandler
-	}
 	return &q
 }
 
