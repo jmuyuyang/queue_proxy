@@ -148,11 +148,11 @@ func (d *DiskQueue) ioLoop() {
 			if d.nextReadPos == d.readPos {
 				dataRead, err = d.readOne()
 				if err != nil {
+					d.logf(util.ErrorLvl, err.Error())
 					if err == io.EOF {
 						d.skipForward()
 						continue
 					}
-					d.logf(util.ErrorLvl, err.Error())
 					if os.IsNotExist(err) {
 						//文件不存在,则递增需要读取的文件
 						d.skipForward()

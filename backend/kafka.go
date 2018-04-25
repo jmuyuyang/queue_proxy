@@ -38,6 +38,7 @@ func (f *KafkaPoolFactory) MakeObject() (*pool.PooledObject, error) {
 	cfg.Net.DialTimeout = f.timeout
 	cfg.Net.WriteTimeout = f.timeout
 	cfg.Producer.Return.Successes = true
+	cfg.Producer.Return.Errors = true
 	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
 	brokerAddrs := strings.Split(f.addr, ",")
 	if len(brokerAddrs) == 0 {
@@ -152,14 +153,14 @@ func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 }
 
 func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
-	q.producer.Input() <- &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
+	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
 	select {
+	case q.producer.Input() <- msg:
+		return nil
 	case <-q.producer.Successes():
 		return nil
 	case err := <-q.producer.Errors():
 		return err
-	default:
-		return nil
 	}
 }
 
