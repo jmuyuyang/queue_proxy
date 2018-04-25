@@ -152,11 +152,14 @@ func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 }
 
 func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
+	q.producer.Input() <- &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
 	select {
-	case q.producer.Input() <- &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}:
+	case <-q.producer.Successes():
 		return nil
 	case err := <-q.producer.Errors():
 		return err
+	default:
+		return nil
 	}
 }
 
