@@ -16,7 +16,7 @@ import (
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
-const MaxBytesPerFile = 500 * 1024
+const MaxBytesPerFile = 2 * 1024 * 1024 * 1024
 
 type Compressor interface {
 	Compress(string, bool) error
@@ -141,16 +141,21 @@ func (d *DiskQueue) ioLoop() {
 		}
 
 		if (d.readFileNum < d.writeFileNum) || (d.readPos < d.writePos) {
+			if d.readPos > d.maxBytesPerFile {
+				d.skipForward()
+				continue
+			}
 			if d.nextReadPos == d.readPos {
 				dataRead, err = d.readOne()
 				if err != nil {
+					if err == io.EOF {
+						d.skipForward()
+						continue
+					}
 					d.logf(util.ErrorLvl, err.Error())
 					if os.IsNotExist(err) {
 						//文件不存在,则递增需要读取的文件
-						d.readFileNum++
-						d.readPos = 0
-						d.nextReadFileNum = d.readFileNum
-						d.nextReadPos = d.readPos
+						d.skipForward()
 					}
 					continue
 				}
@@ -242,6 +247,18 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 	return readBuf, nil
 }
 
+/**
+* 跳过当前read file
+ */
+func (d *DiskQueue) skipForward() {
+	d.nextReadFileNum++
+	d.nextReadPos = 0
+	d.moveForward()
+}
+
+/**
+* 前移read file
+ */
 func (d *DiskQueue) moveForward() {
 	d.readPos = d.nextReadPos
 	oldReadFileNum := d.readFileNum
@@ -252,6 +269,10 @@ func (d *DiskQueue) moveForward() {
 		fn := d.fileName(oldReadFileNum)
 		err := os.Remove(fn)
 		if err != nil {
+			if os.IsNotExist(err) {
+				//如果文件不存在则return
+				return
+			}
 			d.logf(util.ErrorLvl, err.Error())
 		}
 
