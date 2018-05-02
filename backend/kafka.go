@@ -154,13 +154,16 @@ func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 
 func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
 	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
-	select {
-	case q.producer.Input() <- msg:
-		return nil
-	case <-q.producer.Successes():
-		return nil
-	case err := <-q.producer.Errors():
-		return err
+	for {
+		select {
+		case q.producer.Input() <- msg:
+			return nil
+		case <-q.producer.Successes():
+			//上一次的成功请求,本次发送依然要继续
+			continue
+		case err := <-q.producer.Errors():
+			return err
+		}
 	}
 }
 
