@@ -264,7 +264,7 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 				err = q.queue.SendMessage(data)
 				if err != nil {
 					//触发队列检测
-					q.logFunc(util.InfoLvl, "add backend queue error:"+err.Error())
+					q.logFunc(util.ErrorLvl, "add message error:"+err.Error())
 					q.checkQueueChan <- 1
 					addBackendStore = true
 				}
@@ -310,6 +310,7 @@ func (q *QueueProducerObject) startBackend() {
 				}
 				err := pipelineQueue.SendMessage(dataByte)
 				if err != nil {
+					q.logFunc(util.ErrorLvl, "backend flush message error:"+err.Error())
 					pipelineQueue.Close()
 					pipelineQueue = nil
 				}
