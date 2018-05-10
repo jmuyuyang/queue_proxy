@@ -141,10 +141,6 @@ func (q *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName strin
 		}
 	}
 	q.SetQueueTypeName(queueTypeName)
-	if q.queue == nil {
-		q.logFunc(util.ErrorLvl, "cannot find queue source:"+queueTypeName)
-		return
-	}
 	q.SetTopic(topicName)
 }
 
@@ -193,6 +189,9 @@ func (q *QueueProducerObject) GetTopic() string {
 * disk queue 启动
  */
 func (q *QueueProducerObject) Start() {
+	if q.queue == nil {
+		q.logFunc(util.InfoLvl, "cannot find queue source")
+	}
 	go q.startBackend()
 }
 
