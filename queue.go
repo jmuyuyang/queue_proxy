@@ -155,6 +155,22 @@ func (q *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
 	q.doPause(false)
 }
 
+/**
+* 设置queue topic
+ */
+func (q *QueueProducerObject) SetTopic(topicName string) {
+	if q.queue != nil {
+		q.queue.SetTopic(topicName)
+	}
+}
+
+/**
+* 直接设置queue object
+ */
+func (q *QueueProducerObject) SetQueue(queue QueueProducer) {
+	q.queue = queue
+}
+
 func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
 	topic := q.GetTopic()
 	q.logFunc = func(level util.LogLevel, message string) {
@@ -163,15 +179,6 @@ func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
 	}
 	if q.diskQueue != nil {
 		q.diskQueue.SetLogger(q.logFunc)
-	}
-}
-
-/**
-* 设置queue topic
- */
-func (q *QueueProducerObject) SetTopic(topicName string) {
-	if q.queue != nil {
-		q.queue.SetTopic(topicName)
 	}
 }
 
