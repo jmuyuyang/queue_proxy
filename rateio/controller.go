@@ -6,23 +6,37 @@ import (
 	"time"
 )
 
-var Window = 50 * time.Millisecond
+var DefaultWindow = 50 * time.Millisecond
 
 // Controller can limit multiple io.Reader(or io.Writer) within specific rate.
 type Controller struct {
 	capacity        int
 	availableTokens int
+	window          time.Duration
 	cond            *sync.Cond
 	reset           chan int
 	done            chan int
 	enable          int32
 }
 
+/**
+* 获取当前流速窗口
+ */
+func getRateWindow(ratePerSecond int) time.Duration {
+	rateWindow := DefaultWindow
+	if ratePerSecond < int(time.Second)/int(DefaultWindow) {
+		rateWindow = time.Duration(1000/ratePerSecond) * time.Millisecond
+	}
+	return rateWindow
+}
+
 func NewController(ratePerSecond int) *Controller {
-	capacity := ratePerSecond * int(Window) / int(time.Second)
+	rateWindow := getRateWindow(ratePerSecond)
+	capacity := ratePerSecond * int(rateWindow) / int(time.Second)
 	self := &Controller{
 		capacity:        capacity,
 		availableTokens: capacity,
+		window:          rateWindow,
 		cond:            sync.NewCond(new(sync.Mutex)),
 		reset:           make(chan int),
 		done:            make(chan int),
@@ -39,14 +53,16 @@ func (self *Controller) Start() {
 }
 
 func (self *Controller) GetRateLimit() int {
-	return int(self.capacity * int(time.Second) / int(Window))
+	return int(self.capacity * int(time.Second) / int(self.window))
 }
 
 /**
 * 重置rate per second
  */
 func (self *Controller) SetRateLimit(ratePerSecond int) {
-	capacity := ratePerSecond * int(Window) / int(time.Second)
+	rateWindow := getRateWindow(ratePerSecond)
+	capacity := ratePerSecond * int(rateWindow) / int(time.Second)
+	self.window = rateWindow
 	self.reset <- capacity
 }
 
@@ -69,7 +85,7 @@ func (self *Controller) Assign(wait bool) bool {
 }
 
 func (self *Controller) run() {
-	t := time.NewTicker(Window)
+	t := time.NewTicker(self.window)
 	for {
 		select {
 		case <-t.C:
