@@ -32,7 +32,6 @@ type BackendConfig struct {
 
 type DiskConfig struct {
 	Path         string `yaml:"path"`
-	Prefix       string `yaml:"prefix"`
 	FlushTimeout int    `yaml:"flush_timeout"`
 	CompressType string `yaml:"compress_type"`
 }

@@ -39,7 +39,6 @@
         pool_size: 5
   disk:
     path: "./data"
-    prefix: "logcenter-proxy"
     flush_timeout: 2
     compress_type: "gzip" //文件压缩方式
 ```

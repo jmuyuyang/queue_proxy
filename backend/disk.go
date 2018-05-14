@@ -47,7 +47,7 @@ type DiskQueue struct {
 	logf            util.LoggerFuncHandler
 }
 
-func NewDiskQueue(cfg config.DiskConfig) (*DiskQueue, error) {
+func NewDiskQueue(cfg config.DiskConfig) *DiskQueue {
 	d := DiskQueue{
 		writeChan:       make(chan []byte),
 		readChan:        make(chan []byte),
@@ -65,24 +65,33 @@ func NewDiskQueue(cfg config.DiskConfig) (*DiskQueue, error) {
 	case "gzip":
 		d.compressor = &compressor.GzipCompressor{}
 	}
-	err := d.createDataPath()
-	if err != nil {
-		return nil, err
-	}
-	return &d, nil
+	return &d
 }
 
 func (d *DiskQueue) SetTopic(topicName string) {
 	d.name = topicName
+	d.dataPath = path.Join(d.dataPath, "_topic_"+d.name)
 }
 
 func (d *DiskQueue) SetLogger(logger util.LoggerFuncHandler) {
 	d.logf = logger
 }
 
+/**
+* 获取数据目录
+ */
+func (d *DiskQueue) GetDataPath() string {
+	return d.dataPath
+}
+
 func (d *DiskQueue) Start() error {
+	//创建数据目录
+	err := d.createDataPath()
+	if err != nil {
+		return err
+	}
 	//恢复元数据
-	err := d.retrieveMetaData()
+	err = d.retrieveMetaData()
 	if err != nil {
 		return err
 	}
@@ -115,12 +124,13 @@ func (d *DiskQueue) GetMessageChan() chan []byte {
 }
 
 func (d *DiskQueue) createDataPath() error {
-	_, err := os.Stat(d.dataPath)
+	dataPath := d.GetDataPath()
+	_, err := os.Stat(dataPath)
 	if err == nil {
 		return nil
 	}
 	if os.IsNotExist(err) {
-		return os.Mkdir(d.dataPath, 0755)
+		return os.MkdirAll(dataPath, 0755)
 	}
 	return err
 }
@@ -432,9 +442,9 @@ func (d *DiskQueue) persistMetaData() error {
 }
 
 func (d *DiskQueue) metaDataFileName() string {
-	return fmt.Sprintf(path.Join(d.dataPath, "%s-diskqueue.meta.dat"), d.name)
+	return path.Join(d.dataPath, "meta.dat")
 }
 
 func (d *DiskQueue) fileName(fileNum int64) string {
-	return fmt.Sprintf(path.Join(d.dataPath, "%s-diskqueue-%06d.dat"), d.name, fileNum)
+	return fmt.Sprintf(path.Join(d.GetDataPath(), "diskqueue-%06d.dat"), fileNum)
 }

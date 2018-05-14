@@ -392,13 +392,13 @@ func NewConsumerOptions() *backend.Options {
 }
 
 func createDiskQueue(topicName string, config config.DiskConfig) (*backend.DiskQueue, error) {
-	diskQueue, err := backend.NewDiskQueue(config)
+	diskQueue := backend.NewDiskQueue(config)
+	diskQueue.SetTopic(topicName)
+	err := diskQueue.Start()
 	if err != nil {
 		return nil, err
 	}
-	diskQueue.SetTopic(config.Prefix + "-" + topicName)
-	err = diskQueue.Start()
-	return diskQueue, err
+	return diskQueue, nil
 }
 
 func createQueueProducer(cfg config.QueueConfig) QueueProducer {
