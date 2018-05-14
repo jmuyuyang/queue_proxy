@@ -441,8 +441,11 @@ func (d *DiskQueue) persistMetaData() error {
 	return os.Rename(tmpFileName, fileName)
 }
 
+/**
+* 获取元数据文件名
+ */
 func (d *DiskQueue) metaDataFileName() string {
-	return path.Join(d.dataPath, "meta.dat")
+	return path.Join(d.GetDataPath(), "meta.dat")
 }
 
 func (d *DiskQueue) fileName(fileNum int64) string {
