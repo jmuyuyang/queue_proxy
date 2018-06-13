@@ -152,6 +152,14 @@ func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	}, nil
 }
 
+/*
+* 停止kafka queue producer
+ */
+func (q *KafkaQueueProducer) Stop() error {
+	q.pool.Close()
+	return nil
+}
+
 func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
 	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
 	for {
@@ -171,6 +179,6 @@ func (q *KafkaAsyncProducer) Flush() error {
 	return nil
 }
 
-func (q *KafkaAsyncProducer) Close() error {
+func (q *KafkaAsyncProducer) Stop() error {
 	return q.producer.Close()
 }

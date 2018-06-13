@@ -109,6 +109,13 @@ func (q *MnsQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	return p, nil
 }
 
+/**
+* 停止mns queue producer
+ */
+func (q *MnsQueueProducer) Stop() error {
+	return nil
+}
+
 func (q *MnsPipelineProducer) SendMessage(data []byte) error {
 	msg := ali_mns.MessageSendRequest{
 		MessageBody: ali_mns.Base64Bytes(data),
@@ -122,7 +129,7 @@ func (q *MnsPipelineProducer) Flush() error {
 	return nil
 }
 
-func (q *MnsPipelineProducer) Close() error {
+func (q *MnsPipelineProducer) Stop() error {
 	close(q.exitChan)
 	return nil
 }

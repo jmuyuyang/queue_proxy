@@ -21,15 +21,7 @@ type QueueProducer interface {
 	SendMessage([]byte) error
 	CheckActive() bool
 	IsActive() bool
-}
-
-type QueueConsumer interface {
-	Start()
-	Stop()
-	SetTopic(string)
-	GetOpts() *backend.Options
-	GetMessageChan() chan *backend.Message
-	AckMessage(backend.MessageID) error
+	Stop() error
 }
 
 type QueueProducerObject struct {
@@ -44,76 +36,11 @@ type QueueProducerObject struct {
 	logFunc        util.LoggerFuncHandler
 }
 
-type QueueConsumerObject struct {
-	config config.Config
-	queue  QueueConsumer
-}
-
 /*
 * 解析配置文件
  */
 func ParseConfigFile(cfgFile string) (config.Config, error) {
 	return config.ParseConfigFile(cfgFile)
-}
-
-/**
-* 消息服务consumer object
- */
-func NewQueueConsumer(config config.Config) *QueueConsumerObject {
-	consumerObj := &QueueConsumerObject{
-		config: config,
-	}
-	return consumerObj
-}
-
-func (t *QueueConsumerObject) SetQueueAttr(queueTypeName string, topicName string, options *backend.Options) {
-	if options == nil {
-		options = backend.NewOptions()
-	}
-	t.SetQueueTypeName(queueTypeName, options)
-	t.SetTopic(topicName)
-}
-
-/**
-* 设置队列类型
- */
-func (t *QueueConsumerObject) SetQueueTypeName(queueTypeName string, options *backend.Options) {
-	t.queue = createQueueConsumer(t.config.GetQueueConfig(queueTypeName), options)
-}
-
-/**
-* 设置publish 主题
- */
-func (t *QueueConsumerObject) SetTopic(topicName string) {
-	if t.queue != nil {
-		t.queue.SetTopic(topicName)
-	}
-}
-
-func (t *QueueConsumerObject) Start() {
-	t.queue.Start()
-}
-
-func (t *QueueConsumerObject) Stop() {
-	t.queue.Stop()
-}
-
-func (t *QueueConsumerObject) GetOpts() *backend.Options {
-	return t.queue.GetOpts()
-}
-
-/*
-* 获取消息消费channel
- */
-func (t *QueueConsumerObject) GetMessageChan() chan *backend.Message {
-	return t.queue.GetMessageChan()
-}
-
-/**
-* ack queue message
- */
-func (t *QueueConsumerObject) AckMessage(msgId backend.MessageID) error {
-	return t.queue.AckMessage(msgId)
 }
 
 /**
@@ -130,16 +57,25 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 	return senderObj
 }
 
-/*
-* 设置队列相关属性
+/**
+* 初始化queue producer
  */
-func (q *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName string) {
+func (q *QueueProducerObject) InitQueue(queueTypeName string, topicName string) {
 	if q.config.DiskConfig.Path != "" {
 		diskQueue, err := createDiskQueue(topicName, q.config.DiskConfig)
 		if err == nil {
 			q.diskQueue = diskQueue
 		}
 	}
+	if queueTypeName != "" {
+		q.SetQueueAttr(queueTypeName, topicName)
+	}
+}
+
+/*
+* 设置队列相关属性
+ */
+func (q *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName string) {
 	q.SetQueueTypeName(queueTypeName)
 	q.SetTopic(topicName)
 }
@@ -199,7 +135,7 @@ func (q *QueueProducerObject) Start() {
 	if q.queue == nil {
 		q.logFunc(util.InfoLvl, "cannot find queue source")
 	}
-	go q.startBackend()
+	go q.startBackendLoop()
 }
 
 /**
@@ -210,6 +146,7 @@ func (q *QueueProducerObject) Stop() {
 	defer q.Unlock()
 	close(q.exitChan)
 	q.diskQueue.Stop()
+	q.queue.Stop()
 }
 
 /**
@@ -290,7 +227,10 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 	return err
 }
 
-func (q *QueueProducerObject) startBackend() {
+/**
+* 启动 backend disk queue loop
+ */
+func (q *QueueProducerObject) startBackendLoop() {
 	if q.diskQueue == nil {
 		return
 	}
@@ -318,14 +258,14 @@ func (q *QueueProducerObject) startBackend() {
 				err := pipelineQueue.SendMessage(dataByte)
 				if err != nil {
 					q.logFunc(util.ErrorLvl, "backend flush message error:"+err.Error())
-					pipelineQueue.Close()
+					pipelineQueue.Stop()
 					pipelineQueue = nil
 				}
 			}
 		case <-checkQueueTicker.C:
 			if pipelineQueue != nil {
 				//每次定期队列检测，强制关闭一次pipeline queue
-				pipelineQueue.Close()
+				pipelineQueue.Stop()
 				pipelineQueue = nil
 			}
 			if q.queue != nil {
@@ -350,7 +290,7 @@ func (q *QueueProducerObject) startBackend() {
 				} else {
 					q.logFunc(util.InfoLvl, "checked connected failed")
 					if pipelineQueue != nil {
-						pipelineQueue.Close()
+						pipelineQueue.Stop()
 						pipelineQueue = nil
 					}
 					r = nil
@@ -358,7 +298,7 @@ func (q *QueueProducerObject) startBackend() {
 			}
 		case pause := <-q.pauseChan:
 			if pipelineQueue != nil {
-				pipelineQueue.Close()
+				pipelineQueue.Stop()
 				pipelineQueue = nil
 			}
 			if pause {
@@ -368,7 +308,7 @@ func (q *QueueProducerObject) startBackend() {
 		case <-q.exitChan:
 			if pipelineQueue != nil {
 				q.withRecover(func() {
-					pipelineQueue.Close()
+					pipelineQueue.Stop()
 				})
 			}
 			goto exit
@@ -385,10 +325,6 @@ func (q *QueueProducerObject) withRecover(handler func()) {
 		}
 	}()
 	handler()
-}
-
-func NewConsumerOptions() *backend.Options {
-	return backend.NewOptions()
 }
 
 func createDiskQueue(topicName string, config config.DiskConfig) (*backend.DiskQueue, error) {
@@ -410,13 +346,6 @@ func createQueueProducer(cfg config.QueueConfig) QueueProducer {
 	}
 	if cfg.Type == config.TYPE_MNS {
 		return backend.NewMnsQueueProducer(cfg.Attr)
-	}
-	return nil
-}
-
-func createQueueConsumer(cfg config.QueueConfig, options *backend.Options) QueueConsumer {
-	if cfg.Type == config.TYPE_REDIS {
-		return backend.NewRedisQueueConsumer(cfg.Attr, options)
 	}
 	return nil
 }

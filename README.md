@@ -49,7 +49,7 @@
     val config queue.QueueConfig
     config = queue.ParseConfigFile(cfgFile)
     queue.NewQueueProducer(config)
-	queue.SetQueueAttr("hlg-redis","logcenter")
+	queue.InitQueue("hlg-redis","logcenter")
     queue.Start()
 
     queue.SendMessage(dateByte)
@@ -57,7 +57,7 @@
     queue.Stop()
 	
     queue.NewQueueConsumer(config)
-    queue.SetQueueAttr("hlg-kafka","logcenter")
+    queue.InitQueue("hlg-kafka","logcenter")
     queue.Start()
     msg := <-queue.GetMessageChan()
 ```

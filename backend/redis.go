@@ -159,6 +159,13 @@ func (q *RedisQueueProducer) SendMessage(data []byte) error {
 }
 
 /**
+* 停止redis queue producer
+ */
+func (q *RedisQueueProducer) Stop() error {
+	return q.pool.Close()
+}
+
+/**
 * 开启pipeline
  */
 func (q *RedisQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
@@ -199,7 +206,7 @@ func (q *RedisPipelineProducer) Flush() error {
 	return nil
 }
 
-func (q *RedisPipelineProducer) Close() error {
+func (q *RedisPipelineProducer) Stop() error {
 	q.Flush()
 	return q.conn.Close()
 }

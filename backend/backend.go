@@ -23,5 +23,5 @@ type Message struct {
 type PipelineQueueProducer interface {
 	SendMessage([]byte) error
 	Flush() error
-	Close() error
+	Stop() error
 }
