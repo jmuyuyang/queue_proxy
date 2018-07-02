@@ -374,11 +374,12 @@ func (d *DiskQueue) sync() error {
 		}
 	}
 
+	d.needSync = false
+	//无论是否出错都不立即进行下次同步
 	err := d.persistMetaData()
 	if err != nil {
 		return err
 	}
-	d.needSync = false
 	return nil
 }
 
