@@ -159,14 +159,8 @@ func (d *DiskQueue) ioLoop() {
 				dataRead, err = d.readOne()
 				if err != nil {
 					d.logf(util.ErrorLvl, err.Error())
-					if err == io.EOF {
-						d.skipForward()
-						continue
-					}
-					if os.IsNotExist(err) {
-						//文件不存在,则递增需要读取的文件
-						d.skipForward()
-					}
+					//读数据错误则立即跳过当前读取的文件
+					d.skipForward()
 					continue
 				}
 				r = d.readChan
@@ -180,7 +174,10 @@ func (d *DiskQueue) ioLoop() {
 		case r <- dataRead:
 			d.moveForward()
 		case dataWrite := <-d.writeChan:
-			d.writeOne(dataWrite)
+			err = d.writeOne(dataWrite)
+			if err != nil {
+				d.logf(util.ErrorLvl, "write data error: "+err.Error())
+			}
 		case <-syncTicker.C:
 			d.needSync = true
 		case <-d.exitChan:
@@ -261,9 +258,23 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 * 跳过当前read file
  */
 func (d *DiskQueue) skipForward() {
-	d.nextReadFileNum++
+	if d.readFileNum == d.writeFileNum {
+		// if you can't properly read from the current write file it's safe to
+		// assume that something is fucked and we should skip the current file too
+		if d.writeFile != nil {
+			d.writeFile.Close()
+			d.writeFile = nil
+		}
+		d.writeFileNum++
+		d.writePos = 0
+	}
+
+	d.readFileNum++
+	d.readPos = 0
+	d.nextReadFileNum = d.readFileNum
 	d.nextReadPos = 0
-	d.moveForward()
+	//立即进行一次同步
+	d.sync()
 }
 
 /**
@@ -334,6 +345,7 @@ func (d *DiskQueue) writeOne(data []byte) error {
 	if err != nil {
 		d.writeFile.Close()
 		d.writeFile = nil
+		return err
 	}
 	totalBytes := int64(4 + dataLen)
 	d.writePos += totalBytes
