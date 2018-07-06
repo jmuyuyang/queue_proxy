@@ -44,6 +44,13 @@ func ParseConfigFile(cfgFile string) (config.Config, error) {
 }
 
 /**
+* 获取队列实际映射名
+ */
+func TopicMapName(queueTypeName string, topicName string) string {
+	return queueTypeName + "_" + topicName
+}
+
+/**
 * 消息服务producer object
  */
 func NewQueueProducer(config config.Config) *QueueProducerObject {
@@ -62,7 +69,7 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
  */
 func (q *QueueProducerObject) InitQueue(queueTypeName string, topicName string) {
 	if q.config.DiskConfig.Path != "" {
-		diskQueue, err := createDiskQueue(topicName, q.config.DiskConfig)
+		diskQueue, err := createDiskQueue(TopicMapName(queueTypeName, topicName), q.config.DiskConfig)
 		if err == nil {
 			q.diskQueue = diskQueue
 		}
