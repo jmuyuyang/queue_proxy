@@ -26,6 +26,7 @@ type QueueProducer interface {
 
 type QueueProducerObject struct {
 	sync.RWMutex
+	Name           string
 	config         config.Config
 	queue          QueueProducer
 	diskQueue      *backend.DiskQueue
@@ -44,13 +45,6 @@ func ParseConfigFile(cfgFile string) (config.Config, error) {
 }
 
 /**
-* 获取队列实际映射名
- */
-func TopicMapName(queueTypeName string, topicName string) string {
-	return queueTypeName + "_" + topicName
-}
-
-/**
 * 消息服务producer object
  */
 func NewQueueProducer(config config.Config) *QueueProducerObject {
@@ -65,37 +59,36 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 }
 
 /**
+* 直接设置queue object
+ */
+func (q *QueueProducerObject) SetQueue(queue QueueProducer) {
+	q.queue = queue
+}
+
+/**
 * 初始化queue producer
  */
-func (q *QueueProducerObject) InitQueue(queueTypeName string, topicName string) {
+func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) {
+	q.Name = name
 	if q.config.DiskConfig.Path != "" {
-		diskQueue, err := createDiskQueue(TopicMapName(queueTypeName, topicName), q.config.DiskConfig)
+		diskQueue, err := createDiskQueue(name, q.config.DiskConfig)
 		if err == nil {
 			q.diskQueue = diskQueue
 		}
 	}
 	if queueTypeName != "" {
-		q.SetQueueAttr(queueTypeName, topicName)
+		q.setQueueAttr(queueTypeName, topicName)
 	}
 }
 
 /*
 * 设置队列相关属性
  */
-func (q *QueueProducerObject) SetQueueAttr(queueTypeName string, topicName string) {
-	q.SetQueueTypeName(queueTypeName)
-	q.SetTopic(topicName)
-}
-
-/**
-* 设置队列类型
- */
-func (q *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
-	q.Lock()
-	defer q.Unlock()
-	q.doPause(true)
-	q.queue = createQueueProducer(q.config.GetQueueConfig(queueTypeName))
-	q.doPause(false)
+func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName string) {
+	if q.queue == nil {
+		q.queue = createQueueProducer(q.config.GetQueueConfig(queueTypeName))
+		q.queue.SetTopic(topicName)
+	}
 }
 
 /**
@@ -103,15 +96,12 @@ func (q *QueueProducerObject) SetQueueTypeName(queueTypeName string) {
  */
 func (q *QueueProducerObject) SetTopic(topicName string) {
 	if q.queue != nil {
+		q.Lock()
+		defer q.Unlock()
+		q.doPause(true)
 		q.queue.SetTopic(topicName)
+		q.doPause(false)
 	}
-}
-
-/**
-* 直接设置queue object
- */
-func (q *QueueProducerObject) SetQueue(queue QueueProducer) {
-	q.queue = queue
 }
 
 func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
@@ -243,6 +233,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 	}
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	var pipelineQueue backend.PipelineQueueProducer
+	var pause bool = false
 	var r chan []byte
 	var err error
 	for {
@@ -270,6 +261,9 @@ func (q *QueueProducerObject) startBackendLoop() {
 				}
 			}
 		case <-checkQueueTicker.C:
+			if pause {
+				continue
+			}
 			if pipelineQueue != nil {
 				//每次定期队列检测，强制关闭一次pipeline queue
 				pipelineQueue.Stop()
@@ -287,6 +281,9 @@ func (q *QueueProducerObject) startBackendLoop() {
 				}
 			}
 		case <-q.checkQueueChan:
+			if pause {
+				continue
+			}
 			if q.queue != nil && q.queue.IsActive() {
 				//主动发起的队列检测，仅当queue is active时才触发
 				if q.queue.CheckActive() {
@@ -303,7 +300,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 					r = nil
 				}
 			}
-		case pause := <-q.pauseChan:
+		case pause = <-q.pauseChan:
 			if pipelineQueue != nil {
 				pipelineQueue.Stop()
 				pipelineQueue = nil

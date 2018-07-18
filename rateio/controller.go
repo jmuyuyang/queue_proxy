@@ -96,7 +96,9 @@ func (self *Controller) run() {
 		case capacity := <-self.reset:
 			self.cond.L.Lock()
 			self.capacity = capacity
+			self.availableTokens = self.capacity
 			self.cond.L.Unlock()
+			self.cond.Broadcast()
 		case <-self.done:
 			return
 		}

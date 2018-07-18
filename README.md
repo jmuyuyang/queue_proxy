@@ -49,7 +49,7 @@
     val config queue.QueueConfig
     config = queue.ParseConfigFile(cfgFile)
     queue.NewQueueProducer(config)
-	queue.InitQueue("hlg-redis","logcenter")
+	queue.InitQueue("producer-name","topic-name","hlg-redis")
     queue.Start()
 
     queue.SendMessage(dateByte)
