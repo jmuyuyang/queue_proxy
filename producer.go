@@ -52,7 +52,6 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 		config:         config,
 		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
 		exitChan:       make(chan int),
-		pauseChan:      make(chan bool),
 		logFunc:        func(level util.LogLevel, message string) {},
 	}
 	return senderObj
@@ -132,7 +131,9 @@ func (q *QueueProducerObject) Start() {
 	if q.queue == nil {
 		q.logFunc(util.InfoLvl, "cannot find queue source")
 	}
-	go q.startBackendLoop()
+	if q.diskQueue != nil {
+		go q.startBackendLoop()
+	}
 }
 
 /**
@@ -154,6 +155,7 @@ func (q *QueueProducerObject) doPause(pause bool) {
 		select {
 		case q.pauseChan <- pause:
 		default:
+			//如果pauseChan为nil,则拥有阻塞
 		}
 	}
 }
@@ -162,28 +164,33 @@ func (q *QueueProducerObject) doPause(pause bool) {
 * 设置限速
  */
 func (q *QueueProducerObject) SetRateLimit(ratePerSecond int) {
+	q.doPause(true)
+	if ratePerSecond == 0 {
+		return
+	}
 	if q.rateController == nil {
 		q.Lock()
-		defer q.Unlock()
-		q.doPause(true)
 		q.rateController = rateio.NewController(ratePerSecond)
 		q.rateController.Start()
-		q.doPause(false)
+		q.Unlock()
 	} else {
 		q.rateController.SetRateLimit(ratePerSecond)
 	}
+	q.doPause(false)
 }
 
 /**
 * 关闭限速
  */
 func (q *QueueProducerObject) DisableRateLimit() {
-	q.Lock()
-	defer q.Unlock()
-	q.doPause(true)
-	q.rateController.Stop()
-	q.rateController = nil
-	q.doPause(false)
+	if q.rateController != nil {
+		q.Lock()
+		defer q.Unlock()
+		q.doPause(true)
+		q.rateController.Stop()
+		q.rateController = nil
+		q.doPause(false)
+	}
 }
 
 /**
@@ -228,14 +235,12 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 * 启动 backend disk queue loop
  */
 func (q *QueueProducerObject) startBackendLoop() {
-	if q.diskQueue == nil {
-		return
-	}
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	var pipelineQueue backend.PipelineQueueProducer
 	var pause bool = false
 	var r chan []byte
 	var err error
+	q.pauseChan = make(chan bool)
 	for {
 		select {
 		case dataByte := <-r:

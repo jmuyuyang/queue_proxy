@@ -451,7 +451,11 @@ func (d *DiskQueue) persistMetaData() error {
 	f.Close()
 
 	// atomically rename
-	return os.Rename(tmpFileName, fileName)
+	err = os.Rename(tmpFileName, fileName)
+	if err != nil {
+		os.Remove(tmpFileName)
+	}
+	return err
 }
 
 /**
