@@ -35,6 +35,7 @@ type KafkaAsyncProducer struct {
 
 func (f *KafkaPoolFactory) MakeObject() (*pool.PooledObject, error) {
 	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V1_0_0_0
 	cfg.Net.DialTimeout = f.timeout
 	cfg.Net.WriteTimeout = f.timeout
 	cfg.Producer.Return.Successes = true
@@ -140,6 +141,7 @@ func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 
 func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V1_0_0_0
 	cfg.Producer.Return.Successes = true
 	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
 	producer, err := sarama.NewAsyncProducer([]string{q.config.Bind}, cfg)
