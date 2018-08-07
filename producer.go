@@ -335,7 +335,9 @@ exit:
 func (q *QueueProducerObject) withRecover(handler func()) {
 	defer func() {
 		if err := recover(); err != nil {
-			q.logFunc(util.ErrorLvl, err.Error())
+			if _, ok := err.(error); ok {
+				q.logFunc(util.ErrorLvl, err.(error).Error())
+			}
 		}
 	}()
 	handler()
