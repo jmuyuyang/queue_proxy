@@ -21,7 +21,7 @@ const (
 
 type redisQueue struct {
 	pool   *rd.Pool
-	config config.BackendConfig
+	config config.QueueAttrConfig
 	topic  string
 	active bool
 }
@@ -69,7 +69,7 @@ func createRedisQueuePool(host string, connTimeout, idleTimeout time.Duration, m
 	return pool
 }
 
-func newRedisQueue(config config.BackendConfig) redisQueue {
+func newRedisQueue(config config.QueueAttrConfig) redisQueue {
 	timeout := time.Duration(config.Timeout) * time.Second
 	return redisQueue{
 		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.PoolSize),
@@ -145,7 +145,7 @@ func (q *redisQueue) checkQueueLen() bool {
 	return true
 }
 
-func NewRedisQueueProducer(config config.BackendConfig) *RedisQueueProducer {
+func NewRedisQueueProducer(config config.QueueAttrConfig) *RedisQueueProducer {
 	return &RedisQueueProducer{
 		redisQueue: newRedisQueue(config),
 	}
@@ -211,7 +211,7 @@ func (q *RedisPipelineProducer) Stop() error {
 	return q.conn.Close()
 }
 
-func NewRedisQueueConsumer(config config.BackendConfig, options *Options) *RedisQueueConsumer {
+func NewRedisQueueConsumer(config config.QueueAttrConfig, options *Options) *RedisQueueConsumer {
 	pqSize := int(math.Max(1, float64(options.MemQueueSize)/2))
 	clientId := uuid.NewV4()
 	return &RedisQueueConsumer{

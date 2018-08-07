@@ -20,7 +20,7 @@ type KafkaPoolFactory struct {
 type kafkaQueue struct {
 	pool   *pool.ObjectPool
 	topic  string
-	config config.BackendConfig
+	config config.QueueAttrConfig
 	active bool
 }
 
@@ -68,7 +68,7 @@ func (f *KafkaPoolFactory) PassivateObject(object *pool.PooledObject) error {
 	return nil
 }
 
-func createKafkaQueuePool(config config.BackendConfig) *pool.ObjectPool {
+func createKafkaQueuePool(config config.QueueAttrConfig) *pool.ObjectPool {
 	timeout := time.Duration(config.Timeout) * time.Second
 	poolFactory := &KafkaPoolFactory{
 		addr:    config.Bind,
@@ -80,7 +80,7 @@ func createKafkaQueuePool(config config.BackendConfig) *pool.ObjectPool {
 	return pool.NewObjectPool(poolFactory, cfg)
 }
 
-func newKafkaQueue(config config.BackendConfig) kafkaQueue {
+func newKafkaQueue(config config.QueueAttrConfig) kafkaQueue {
 	return kafkaQueue{
 		pool:   createKafkaQueuePool(config),
 		config: config,
@@ -90,10 +90,54 @@ func newKafkaQueue(config config.BackendConfig) kafkaQueue {
 
 func (q *kafkaQueue) SetTopic(topic string) {
 	q.topic = topic
+	if _, ok := q.config.Attr["auto_create"]; ok {
+		autoCreate := q.config.Attr["auto_create"].(bool)
+		if autoCreate {
+			//自动创建topic
+			q.createTopic()
+		}
+	}
 }
 
 func (q *kafkaQueue) GetTopic() string {
 	return q.topic
+}
+
+/**
+* 创建kafka topic
+ */
+func (q *kafkaQueue) createTopic() error {
+	broker := sarama.NewBroker(q.config.Bind)
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V1_0_0_0
+	broker.Open(cfg)
+	if ok, _ := broker.Connected(); !ok {
+		return errors.New("connect to kafka server failed")
+	}
+	req := sarama.CreateTopicsRequest{
+		TopicDetails: make(map[string]*sarama.TopicDetail),
+	}
+	var partitionNum int32 = 1
+	if _, ok := q.config.Attr["partition_num"]; ok {
+		partitionNum = int32(q.config.Attr["partition_num"].(int))
+	}
+	req.TopicDetails[q.topic] = &sarama.TopicDetail{
+		//默认副本数均为1
+		NumPartitions:     partitionNum,
+		ReplicationFactor: 1,
+	}
+	res, err := broker.CreateTopics(&req)
+	if err != nil {
+		return err
+	}
+	if _, ok := res.TopicErrors[q.topic]; ok {
+		topicErr := res.TopicErrors[q.topic]
+		if topicErr.Err == sarama.ErrTopicAlreadyExists {
+			return nil
+		}
+		return topicErr.Err
+	}
+	return nil
 }
 
 /**
@@ -114,7 +158,7 @@ func (q *kafkaQueue) IsActive() bool {
 	return q.active
 }
 
-func NewKafkaQueueProducer(config config.BackendConfig) *KafkaQueueProducer {
+func NewKafkaQueueProducer(config config.QueueAttrConfig) *KafkaQueueProducer {
 	q := KafkaQueueProducer{
 		kafkaQueue: newKafkaQueue(config),
 	}

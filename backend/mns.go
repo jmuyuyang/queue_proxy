@@ -15,7 +15,7 @@ const (
 
 type mnsQueue struct {
 	pool   sync.Pool
-	config config.BackendConfig
+	config config.QueueAttrConfig
 	topic  string
 	active bool
 }
@@ -31,7 +31,7 @@ type MnsPipelineProducer struct {
 	exitChan    chan int
 }
 
-func newMnsQueuePool(config config.BackendConfig) sync.Pool {
+func newMnsQueuePool(config config.QueueAttrConfig) sync.Pool {
 	accessKey := config.Attr["access_key"].(string)
 	accessKeySecret := config.Attr["access_secret"].(string)
 	return sync.Pool{
@@ -71,7 +71,7 @@ func (q *mnsQueue) CheckActive() bool {
 	return true
 }
 
-func NewMnsQueueProducer(config config.BackendConfig) *MnsQueueProducer {
+func NewMnsQueueProducer(config config.QueueAttrConfig) *MnsQueueProducer {
 	return &MnsQueueProducer{
 		mnsQueue: mnsQueue{
 			pool:   newMnsQueuePool(config),

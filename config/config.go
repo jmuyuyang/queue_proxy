@@ -18,12 +18,12 @@ type Config struct {
 }
 
 type QueueConfig struct {
-	Name string        `yaml:"name"`
-	Type string        `yaml:"type"`
-	Attr BackendConfig `yaml:"attr"`
+	Name string          `yaml:"name"`
+	Type string          `yaml:"type"`
+	Attr QueueAttrConfig `yaml:"attr"`
 }
 
-type BackendConfig struct {
+type QueueAttrConfig struct {
 	Bind     string                 `yaml:"bind"`
 	Timeout  int                    `yaml:"timeout"`
 	PoolSize int                    `yaml:"pool_size"`
