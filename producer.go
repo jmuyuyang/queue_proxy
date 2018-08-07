@@ -261,7 +261,9 @@ func (q *QueueProducerObject) startBackendLoop() {
 				err := pipelineQueue.SendMessage(dataByte)
 				if err != nil {
 					q.logFunc(util.ErrorLvl, "backend flush message error:"+err.Error())
-					pipelineQueue.Stop()
+					q.withRecover(func() {
+						pipelineQueue.Stop()
+					})
 					pipelineQueue = nil
 				}
 			}
@@ -271,7 +273,9 @@ func (q *QueueProducerObject) startBackendLoop() {
 			}
 			if pipelineQueue != nil {
 				//每次定期队列检测，强制关闭一次pipeline queue
-				pipelineQueue.Stop()
+				q.withRecover(func() {
+					pipelineQueue.Stop()
+				})
 				pipelineQueue = nil
 			}
 			if q.queue != nil {
@@ -299,7 +303,6 @@ func (q *QueueProducerObject) startBackendLoop() {
 				} else {
 					q.logFunc(util.InfoLvl, "checked connected failed")
 					if pipelineQueue != nil {
-						pipelineQueue.Stop()
 						pipelineQueue = nil
 					}
 					r = nil
@@ -307,7 +310,9 @@ func (q *QueueProducerObject) startBackendLoop() {
 			}
 		case pause = <-q.pauseChan:
 			if pipelineQueue != nil {
-				pipelineQueue.Stop()
+				q.withRecover(func() {
+					pipelineQueue.Stop()
+				})
 				pipelineQueue = nil
 			}
 			if pause {
@@ -330,7 +335,7 @@ exit:
 func (q *QueueProducerObject) withRecover(handler func()) {
 	defer func() {
 		if err := recover(); err != nil {
-			q.logFunc(util.ErrorLvl, "checked connected successed")
+			q.logFunc(util.ErrorLvl, err.Error())
 		}
 	}()
 	handler()
