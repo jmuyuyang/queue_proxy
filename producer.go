@@ -271,15 +271,15 @@ func (q *QueueProducerObject) startBackendLoop() {
 			if pause {
 				continue
 			}
-			if pipelineQueue != nil {
-				//每次定期队列检测，强制关闭一次pipeline queue
-				q.withRecover(func() {
-					pipelineQueue.Stop()
-				})
-				pipelineQueue = nil
-			}
 			if q.queue != nil {
 				if q.queue.CheckActive() {
+					//强制关闭一次pipeline queue
+					if pipelineQueue != nil {
+						q.withRecover(func() {
+							pipelineQueue.Stop()
+						})
+					}
+
 					q.logFunc(util.DebugLvl, "checked connected successed")
 					if r == nil {
 						r = q.diskQueue.GetMessageChan()
@@ -288,6 +288,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 					q.logFunc(util.InfoLvl, "checked connected failed")
 					r = nil
 				}
+				pipelineQueue = nil
 			}
 		case <-q.checkQueueChan:
 			if pause {

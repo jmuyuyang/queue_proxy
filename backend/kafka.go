@@ -107,7 +107,8 @@ func (q *kafkaQueue) GetTopic() string {
 * 创建kafka topic
  */
 func (q *kafkaQueue) createTopic() error {
-	broker := sarama.NewBroker(q.config.Bind)
+	brokerAddrs := strings.Split(q.config.Bind, ",")
+	broker := sarama.NewBroker(brokerAddrs[0])
 	cfg := sarama.NewConfig()
 	cfg.Version = sarama.V1_0_0_0
 	broker.Open(cfg)
@@ -144,13 +145,18 @@ func (q *kafkaQueue) createTopic() error {
 * 检测队列是否活跃
  */
 func (q *kafkaQueue) CheckActive() bool {
-	producer, err := q.pool.BorrowObject()
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V1_0_0_0
+	cfg.Net.DialTimeout = time.Duration(q.config.Timeout) * time.Second
+	brokerAddrs := strings.Split(q.config.Bind, ",")
+	tmpCli, err := sarama.NewClient(brokerAddrs, cfg)
 	if err != nil {
 		q.active = false
+		q.pool.Clear()
 		return false
 	}
-	defer q.pool.ReturnObject(producer)
 	q.active = true
+	tmpCli.Close()
 	return true
 }
 
