@@ -7,6 +7,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/jmuyuyang/queue_proxy/config"
+	"github.com/jmuyuyang/queue_proxy/util"
 	"github.com/jolestar/go-commons-pool"
 )
 
@@ -189,7 +190,7 @@ func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 	return nil
 }
 
-func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
+func (q *KafkaQueueProducer) StartPipeline(queue *util.BoundedQueue) (PipelineQueueProducer, error) {
 	cfg := sarama.NewConfig()
 	cfg.Version = sarama.V1_0_0_0
 	cfg.Producer.Return.Successes = true
@@ -198,9 +199,12 @@ func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
 	if err != nil {
 		return nil, err
 	}
+	queue.StartTransaction()
+	queue.StartConsumers(1, q.consumer)
 	return &KafkaAsyncProducer{
-		producer: producer,
-		topic:    q.topic,
+		producer:   producer,
+		topic:      q.topic,
+		transQueue: queue,
 	}, nil
 }
 
@@ -212,18 +216,17 @@ func (q *KafkaQueueProducer) Stop() error {
 	return nil
 }
 
-func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
-	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
-	for {
-		select {
-		case q.producer.Input() <- msg:
-			return nil
-		case <-q.producer.Successes():
-			//上一次的成功请求,本次发送依然要继续
-			continue
-		case err := <-q.producer.Errors():
-			return err
-		}
+func (q *KafkaAsyncProducer) consumer(item interface{}) {
+	log := string(item.([]byte))
+	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(log)}
+	select {
+	case q.producer.Input() <- msg:
+	case <-q.producer.Successes():
+		//上一次的成功请求,本次发送依然要继续
+		q.producer.Input() <- msg
+		q.transQueue.Commit()
+	case err := <-q.producer.Errors():
+		q.transQueue.Rollback()
 	}
 }
 
@@ -232,5 +235,6 @@ func (q *KafkaAsyncProducer) Flush() error {
 }
 
 func (q *KafkaAsyncProducer) Stop() error {
-	return q.producer.Close()
+	q.transQueue.Stop()
+	q.producer.Close()
 }

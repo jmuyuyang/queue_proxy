@@ -168,30 +168,31 @@ func (q *RedisQueueProducer) Stop() error {
 /**
 * 开启pipeline
  */
-func (q *RedisQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
+func (q *RedisQueueProducer) StartPipeline(queue *util.BoundedQueue) (PipelineQueueProducer, error) {
 	conn := q.pool.Get()
 	err := conn.Send("MULTI")
 	if err != nil {
 		return nil, err
 	}
 	pipelineQueue := &RedisPipelineProducer{
-		conn:          conn,
-		topic:         q.topic,
-		bufferSize:    int32(DEFAULT_BUFFER_SIZE),
-		curBufferSize: int32(0),
+		conn:       conn,
+		topic:      q.topic,
+		bufferSize: int32(DEFAULT_BUFFER_SIZE),
+		transQueue: queue,
 	}
 	return pipelineQueue, nil
 }
 
-func (q *RedisPipelineProducer) SendMessage(log []byte) error {
-	q.conn.Send("LPUSH", q.topic, string(log))
-	atomic.AddInt32(&q.curBufferSize, 1)
-	if atomic.LoadInt32(&q.curBufferSize) >= q.bufferSize {
+func (q *RedisPipelineProducer) consumer(item interface{}) {
+	q.conn.Send("LPUSH", q.topic, string(item.([]byte)))
+	if q.transQueue.TransactionSize() >= q.bufferSize {
 		err := q.conn.Send("EXEC")
-		atomic.StoreInt32(&q.curBufferSize, int32(0))
-		return err
+		if err != nil {
+			q.transQueue.Rollback()
+		} else {
+			q.transQueue.Commit()
+		}
 	}
-	return nil
 }
 
 /**

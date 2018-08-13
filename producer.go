@@ -237,6 +237,9 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 func (q *QueueProducerObject) startBackendLoop() {
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	var pipelineQueue backend.PipelineQueueProducer
+	var transQueue util.BoundedQueue = util.NewBoundedQueue(500, func(item interface{}) {
+		q.diskQueue.SendMessage(item.([]byte))
+	})
 	var pause bool = false
 	var r chan []byte
 	var err error
@@ -245,7 +248,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 		select {
 		case dataByte := <-r:
 			if pipelineQueue == nil {
-				pipelineQueue, err = q.queue.StartPipeline()
+				pipelineQueue, err = q.queue.StartPipeline(transQueue)
 			}
 			if err != nil {
 				//创建pipeline队列失败,则直接禁止读取disk queue
@@ -258,14 +261,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 					//等待限速
 					q.rateController.Assign(true)
 				}
-				err := pipelineQueue.SendMessage(dataByte)
-				if err != nil {
-					q.logFunc(util.ErrorLvl, "backend flush message error:"+err.Error())
-					q.withRecover(func() {
-						pipelineQueue.Stop()
-					})
-					pipelineQueue = nil
-				}
+				transQueue.Produce(dataByte)
 			}
 		case <-checkQueueTicker.C:
 			if pause {
