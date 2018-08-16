@@ -7,11 +7,8 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/jmuyuyang/queue_proxy/config"
-	"github.com/jmuyuyang/queue_proxy/util"
 	"github.com/jolestar/go-commons-pool"
 )
-
-const KAFKA_POOL_IDLE_TIMEOUT = 60 * 10
 
 type KafkaPoolFactory struct {
 	addr    string
@@ -30,8 +27,9 @@ type KafkaQueueProducer struct {
 }
 
 type KafkaAsyncProducer struct {
-	producer sarama.AsyncProducer
-	topic    string
+	lastSendMsg *sarama.ProducerMessage
+	producer    sarama.SyncProducer
+	topic       string
 }
 
 func (f *KafkaPoolFactory) MakeObject() (*pool.PooledObject, error) {
@@ -77,7 +75,7 @@ func createKafkaQueuePool(config config.QueueAttrConfig) *pool.ObjectPool {
 	}
 	cfg := pool.NewDefaultPoolConfig()
 	cfg.MaxIdle = config.PoolSize
-	cfg.MinEvictableIdleTimeMillis = 1000 * KAFKA_POOL_IDLE_TIMEOUT //10分钟空闲时间
+	cfg.MinEvictableIdleTimeMillis = 1000 * DEFAULT_QUEUE_IDLE_TIMEOUT //10分钟空闲时间
 	return pool.NewObjectPool(poolFactory, cfg)
 }
 
@@ -190,24 +188,6 @@ func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 	return nil
 }
 
-func (q *KafkaQueueProducer) StartPipeline(queue *util.BoundedQueue) (PipelineQueueProducer, error) {
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V1_0_0_0
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
-	producer, err := sarama.NewAsyncProducer([]string{q.config.Bind}, cfg)
-	if err != nil {
-		return nil, err
-	}
-	queue.StartTransaction()
-	queue.StartConsumers(1, q.consumer)
-	return &KafkaAsyncProducer{
-		producer:   producer,
-		topic:      q.topic,
-		transQueue: queue,
-	}, nil
-}
-
 /*
 * 停止kafka queue producer
  */
@@ -216,25 +196,40 @@ func (q *KafkaQueueProducer) Stop() error {
 	return nil
 }
 
-func (q *KafkaAsyncProducer) consumer(item interface{}) {
-	log := string(item.([]byte))
-	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(log)}
-	select {
-	case q.producer.Input() <- msg:
-	case <-q.producer.Successes():
-		//上一次的成功请求,本次发送依然要继续
-		q.producer.Input() <- msg
-		q.transQueue.Commit()
-	case err := <-q.producer.Errors():
-		q.transQueue.Rollback()
+func (q *KafkaQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
+	timeout := time.Duration(q.config.Timeout) * time.Second
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V1_0_0_0
+	cfg.Net.DialTimeout = timeout
+	cfg.Net.WriteTimeout = timeout
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
+	producer, err := sarama.NewSyncProducer([]string{q.config.Bind}, cfg)
+	if err != nil {
+		return nil, err
 	}
+	return &KafkaAsyncProducer{
+		producer: producer,
+		topic:    q.topic,
+	}, nil
 }
 
-func (q *KafkaAsyncProducer) Flush() error {
-	return nil
+func (q *KafkaAsyncProducer) Topic() string {
+	return q.topic
+}
+
+/**
+* 批量发送kafka 消息
+ */
+func (q *KafkaAsyncProducer) SendMessages(items [][]byte) error {
+	msgList := make([]*sarama.ProducerMessage, 0)
+	for _, item := range items {
+		msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(item))}
+		msgList = append(msgList, msg)
+	}
+	return q.producer.SendMessages(msgList)
 }
 
 func (q *KafkaAsyncProducer) Stop() error {
-	q.transQueue.Stop()
-	q.producer.Close()
+	return q.producer.Close()
 }

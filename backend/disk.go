@@ -438,6 +438,7 @@ func (d *DiskQueue) persistMetaData() error {
 		return err
 	}
 
+	defer os.Remove(tmpFileName)
 	_, err = fmt.Fprintf(f, "%s:%d;%s:%d;,%s:%d;%s:%d\n",
 		"read_file", d.readFileNum,
 		"read_pos", d.readPos,
@@ -451,11 +452,7 @@ func (d *DiskQueue) persistMetaData() error {
 	f.Close()
 
 	// atomically rename
-	err = os.Rename(tmpFileName, fileName)
-	if err != nil {
-		os.Remove(tmpFileName)
-	}
-	return err
+	return os.Rename(tmpFileName, fileName)
 }
 
 /**

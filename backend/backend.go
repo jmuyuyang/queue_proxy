@@ -2,13 +2,14 @@ package backend
 
 const (
 	ClientIDLength = 16
-)
 
-type QueueConfig struct {
-	Name string                 `yaml:"name"`
-	Type string                 `yaml:"type"`
-	Attr map[string]interface{} `yaml:"attr"`
-}
+	DEFAULT_QUEUE_IDLE_TIMEOUT      = 60 * 10
+	DEFAULT_PRODUCER_BATCH_SIZE     = 20
+	DEFAULT_PRODUCER_BATCH_INTERVAL = 5
+
+	DEFAULT_CHANNEL_SIZE       = 100
+	DEFAULT_CHANNEL_WORKER_NUM = 1
+)
 
 type MessageID string
 
@@ -20,8 +21,8 @@ type Message struct {
 	index    int
 }
 
-type PipelineQueueProducer interface {
-	SendMessage([]byte) error
-	Flush() error
+type BatchQueueProducer interface {
+	Topic() string
+	SendMessages([][]byte) error
 	Stop() error
 }

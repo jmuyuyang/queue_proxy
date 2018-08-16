@@ -20,7 +20,13 @@ type BoundedQueue struct {
 	stopCh        chan struct{}
 	stopWG        sync.WaitGroup
 	stopped       int32
-	transaction   int32
+}
+
+type BoundedQueueWorker interface {
+	Consume(item interface{})
+	IdleTimeout() time.Duration
+	IdleCheck()
+	Stop()
 }
 
 // NewBoundedQueue constructs the new queue of specified capacity, and with an optional
@@ -34,45 +40,41 @@ func NewBoundedQueue(capacity int, onDroppedItem func(item interface{})) *Bounde
 	}
 }
 
-func (q *BoundedQueue) StartTransaction() {
-	atomic.StoreInt32(&q.transaction, 1)
-	q.itemBuffer = make([]interface{}, 0)
-}
-
-func (q *BoundedQueue) StartConsumers(num int, consumer func(item interface{})) {
-	for i := 0; i < num; i++ {
-		q.stopWG.Add(1)
-		go func() {
-			defer q.stopWG.Done()
-			for {
-				select {
-				case item := <-q.items:
-					atomic.AddInt32(&q.size, -1)
-					if atomic.LoadInt32(&q.transaction) != 0 {
-						q.itemBuffer = append(q.itemBuffer, item)
-					}
-					consumer(item)
-				case <-q.stopCh:
-					return
-				}
+func (q *BoundedQueue) AddConsumerWorker(worker BoundedQueueWorker) {
+	q.stopWG.Add(1)
+	go func() {
+		var idleTicker *time.Ticker
+		if worker.IdleTimeout() >= time.Second {
+			idleTicker = time.NewTicker(worker.IdleTimeout())
+		}
+		defer q.stopWG.Done()
+		for {
+			select {
+			case item := <-q.items:
+				atomic.AddInt32(&q.size, -1)
+				worker.Consume(item)
+			case <-idleTicker.C:
+				worker.IdleCheck()
+			case <-q.stopCh:
+				idleTicker.Stop()
+				worker.Stop()
+				return
 			}
-		}()
-	}
+		}
+	}()
 }
 
-func (q *BoundedQueue) Commit() {
-	q.itemBuffer = make([]interface{}, 0)
-}
-
-func (q *BoundedQueue) Rollback() {
-	for _, item := range itemBuffer {
-		q.Produce(item)
+/**
+* pause consumer worker
+ */
+func (q *BoundedQueue) StopConsumeWorker(num int) {
+	for i := 0; i < num; i++ {
+		q.stopCh <- struct{}{}
 	}
-	q.commit()
 }
 
 // Produce is used by the producer to submit new item to the queue. Returns false in case of queue overflow.
-func (q *BoundedQueue) Produce(item interface{}) bool {
+func (q *BoundedQueue) Produce(item interface{}, timeout time.Duration) bool {
 	if atomic.LoadInt32(&q.stopped) != 0 {
 		q.onDroppedItem(item)
 		return false
@@ -81,7 +83,7 @@ func (q *BoundedQueue) Produce(item interface{}) bool {
 	case q.items <- item:
 		atomic.AddInt32(&q.size, 1)
 		return true
-	default:
+	case <-time.After(timeout):
 		if q.onDroppedItem != nil {
 			q.onDroppedItem(item)
 		}
@@ -96,14 +98,14 @@ func (q *BoundedQueue) Stop() {
 	close(q.stopCh)
 	q.stopWG.Wait()
 	close(q.items)
-}
-
-func (q *BoundedQueue) TransactionBuffer() []interface{} {
-	return q.itemBuffer
-}
-
-func (q *BoundedQueue) TransactionSize() int {
-	return len(q.itemBuffer)
+	if q.onDroppedItem != nil {
+		for item := range q.items {
+			if len(item.([]byte)) <= 0 {
+				return
+			}
+			q.onDroppedItem(item)
+		}
+	}
 }
 
 // Size returns the current size of the queue

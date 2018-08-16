@@ -13,8 +13,14 @@ const (
 )
 
 type Config struct {
-	QueueConfig []QueueConfig `yaml:"queue"`
-	DiskConfig  DiskConfig    `yaml:"disk"`
+	ChannelConfig ChannelConfig `yaml:"channel"`
+	QueueConfig   []QueueConfig `yaml:"queue"`
+	DiskConfig    DiskConfig    `yaml:"disk"`
+}
+
+type ChannelConfig struct {
+	Size      int `yaml:"queue_size"`
+	WorkerNum int `yaml:"worker_num"`
 }
 
 type QueueConfig struct {

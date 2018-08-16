@@ -15,3 +15,15 @@ func (w *WaitGroupWrapper) Wrap(cb func()) {
 		w.Done()
 	}()
 }
+
+func WithRecover(fn func(), panicHandler func(error)) {
+	defer func() {
+		if err := recover(); err != nil {
+			if _, ok := err.(error); ok {
+				panicHandler(err.(error))
+			}
+		}
+	}()
+
+	fn()
+}

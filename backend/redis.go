@@ -3,7 +3,6 @@ package backend
 import (
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	rd "github.com/garyburd/redigo/redis"
@@ -13,10 +12,7 @@ import (
 )
 
 const (
-	DEFAULT_BUFFER_SIZE     = 10
-	REDIS_POOL_IDLE_TIMEOUT = 60 * 10
 	REDIS_CONN_READ_TIMEOUT = 30 //读超时10s,用于brpop操作
-	REDIS_POOL_PING_TIMEOUT = 5  //PING超时
 )
 
 type redisQueue struct {
@@ -33,7 +29,6 @@ type RedisQueueProducer struct {
 type RedisPipelineProducer struct {
 	conn          rd.Conn
 	topic         string
-	bufferSize    int32
 	curBufferSize int32
 }
 
@@ -72,7 +67,7 @@ func createRedisQueuePool(host string, connTimeout, idleTimeout time.Duration, m
 func newRedisQueue(config config.QueueAttrConfig) redisQueue {
 	timeout := time.Duration(config.Timeout) * time.Second
 	return redisQueue{
-		pool:   createRedisQueuePool(config.Bind, timeout, REDIS_POOL_IDLE_TIMEOUT*time.Second, config.PoolSize),
+		pool:   createRedisQueuePool(config.Bind, timeout, DEFAULT_QUEUE_IDLE_TIMEOUT*time.Second, config.PoolSize),
 		config: config,
 		active: true,
 	}
@@ -114,7 +109,7 @@ func (q *redisQueue) CheckActive() bool {
 func (q *redisQueue) checkConnActive() bool {
 	conn := q.pool.Get()
 	defer conn.Close()
-	_, err := rd.DoWithTimeout(conn, time.Duration(REDIS_POOL_PING_TIMEOUT)*time.Second, "PING")
+	_, err := rd.DoWithTimeout(conn, time.Duration(q.config.Timeout)*time.Second, "PING")
 	if err != nil {
 		return false
 	} else {
@@ -168,47 +163,34 @@ func (q *RedisQueueProducer) Stop() error {
 /**
 * 开启pipeline
  */
-func (q *RedisQueueProducer) StartPipeline(queue *util.BoundedQueue) (PipelineQueueProducer, error) {
+func (q *RedisQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
 	conn := q.pool.Get()
-	err := conn.Send("MULTI")
-	if err != nil {
-		return nil, err
-	}
 	pipelineQueue := &RedisPipelineProducer{
-		conn:       conn,
-		topic:      q.topic,
-		bufferSize: int32(DEFAULT_BUFFER_SIZE),
-		transQueue: queue,
+		conn:  conn,
+		topic: q.topic,
 	}
 	return pipelineQueue, nil
 }
 
-func (q *RedisPipelineProducer) consumer(item interface{}) {
-	q.conn.Send("LPUSH", q.topic, string(item.([]byte)))
-	if q.transQueue.TransactionSize() >= q.bufferSize {
-		err := q.conn.Send("EXEC")
-		if err != nil {
-			q.transQueue.Rollback()
-		} else {
-			q.transQueue.Commit()
-		}
-	}
+func (q *RedisPipelineProducer) Topic() string {
+	return q.topic
 }
 
 /**
-* 刷新piplien add log
+* 启用redis pipeline 批量发送消息
  */
-func (q *RedisPipelineProducer) Flush() error {
-	if atomic.LoadInt32(&q.curBufferSize) >= int32(0) {
-		err := q.conn.Send("EXEC")
-		atomic.StoreInt32(&q.curBufferSize, 0)
+func (q *RedisPipelineProducer) SendMessages(items [][]byte) error {
+	err := q.conn.Send("MULTI")
+	if err != nil {
 		return err
 	}
-	return nil
+	for _, item := range items {
+		q.conn.Send("LPUSH", q.topic, string(item))
+	}
+	return q.conn.Send("EXEC")
 }
 
 func (q *RedisPipelineProducer) Stop() error {
-	q.Flush()
 	return q.conn.Close()
 }
 
