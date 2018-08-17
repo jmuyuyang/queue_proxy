@@ -21,6 +21,19 @@ type Message struct {
 	index    int
 }
 
+type QueueProducer interface {
+	StartBatchProducer() (BatchQueueProducer, error)
+	SetTopic(string)
+	GetTopic() string
+	SendMessage([]byte) error
+	CheckActive() bool
+	IsActive() bool
+	Stop() error
+}
+
+/**
+* 队列批次发送producer
+ */
 type BatchQueueProducer interface {
 	Topic() string
 	SendMessages([][]byte) error

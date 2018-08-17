@@ -14,21 +14,11 @@ import (
 const CHECK_QUEUE_TIMEOUT = 5 * time.Second
 const CHECK_QUEUE_CHAIN_BUFFER = 3
 
-type QueueProducer interface {
-	StartBatchProducer() (backend.BatchQueueProducer, error)
-	SetTopic(string)
-	GetTopic() string
-	SendMessage([]byte) error
-	CheckActive() bool
-	IsActive() bool
-	Stop() error
-}
-
 type QueueProducerObject struct {
 	sync.RWMutex
 	Name           string
 	config         config.Config
-	queue          QueueProducer
+	queue          backend.QueueProducer
 	diskQueue      *backend.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
@@ -60,7 +50,7 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 /**
 * 直接设置queue object
  */
-func (q *QueueProducerObject) SetQueue(queue QueueProducer) {
+func (q *QueueProducerObject) SetQueue(queue backend.QueueProducer) {
 	q.queue = queue
 }
 
@@ -316,7 +306,7 @@ func createDiskQueue(topicName string, config config.DiskConfig) (*backend.DiskQ
 	return diskQueue, nil
 }
 
-func createQueueProducer(cfg config.QueueConfig) QueueProducer {
+func createQueueProducer(cfg config.QueueConfig) backend.QueueProducer {
 	if cfg.Type == config.TYPE_REDIS {
 		return backend.NewRedisQueueProducer(cfg.Attr)
 	}
