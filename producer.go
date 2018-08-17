@@ -25,6 +25,7 @@ type QueueProducerObject struct {
 	exitChan       chan int
 	pauseChan      chan bool
 	logFunc        util.LoggerFuncHandler
+	waitGroup      util.WaitGroupWrapper
 }
 
 /*
@@ -122,7 +123,7 @@ func (q *QueueProducerObject) Start() {
 		q.logFunc(util.InfoLvl, "cannot find queue source")
 	}
 	if q.diskQueue != nil {
-		go q.startBackendLoop()
+		q.waitGroup.Wrap(q.startBackendLoop)
 	}
 }
 
@@ -133,8 +134,9 @@ func (q *QueueProducerObject) Stop() {
 	q.Lock()
 	defer q.Unlock()
 	close(q.exitChan)
-	q.diskQueue.Stop()
+	q.waitGroup.Wait()
 	q.queue.Stop()
+	q.diskQueue.Stop()
 }
 
 /**
@@ -202,7 +204,7 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 				err = q.queue.SendMessage(data)
 				if err != nil {
 					//触发队列检测
-					q.logFunc(util.ErrorLvl, "add message error:"+err.Error())
+					q.logFunc(util.ErrorLvl, "send message error:"+err.Error())
 					q.checkQueueChan <- 1
 					addBackendStore = true
 				}

@@ -29,7 +29,10 @@ func NewQueueProduceChannel(queueSize int, workerNum int, onDroppedItem func(ite
 		workerNum = DEFAULT_CHANNEL_WORKER_NUM
 	}
 	for i := 0; i < workerNum; i++ {
-		producer := NewTransactionProducer(onDroppedItem, onProducerConstruct, logf)
+		producer := NewTransactionProducer(func(item interface{}) {
+			//非阻塞式尝试重新写回队列
+			q.queue.Produce(item, 0*time.Second)
+		}, onProducerConstruct, logf)
 		q.producerList = append(q.producerList, producer)
 	}
 	return q

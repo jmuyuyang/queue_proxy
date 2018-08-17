@@ -181,7 +181,7 @@ func (d *DiskQueue) ioLoop() {
 		case <-syncTicker.C:
 			d.needSync = true
 		case <-d.exitChan:
-			//退出是进行一次meta data同步
+			//退出时进行一次meta data同步
 			d.sync()
 			goto exit
 		}
@@ -231,13 +231,17 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 	}
 
 	readBuf := make([]byte, msgSize)
-	_, err = io.ReadFull(d.reader, readBuf)
+	readBytes, err := io.ReadFull(d.reader, readBuf)
 	if err != nil {
-		d.readFile.Close()
-		d.readFile = nil
-		return nil, err
+		if err == io.ErrUnexpectedEOF {
+			//修正msgSize
+			msgSize = int32(readBytes)
+		} else {
+			d.readFile.Close()
+			d.readFile = nil
+			return nil, err
+		}
 	}
-
 	totalBytes := int64(4 + msgSize)
 	d.nextReadPos = d.readPos + totalBytes
 	d.nextReadFileNum = d.readFileNum
