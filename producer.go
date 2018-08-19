@@ -7,6 +7,7 @@ import (
 
 	"github.com/jmuyuyang/queue_proxy/backend"
 	"github.com/jmuyuyang/queue_proxy/config"
+	"github.com/jmuyuyang/queue_proxy/queue"
 	"github.com/jmuyuyang/queue_proxy/rateio"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
@@ -19,7 +20,7 @@ type QueueProducerObject struct {
 	Name           string
 	config         config.Config
 	queue          backend.QueueProducer
-	diskQueue      *backend.DiskQueue
+	diskQueue      *queue.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
 	exitChan       chan int
@@ -298,8 +299,8 @@ exit:
 	checkQueueTicker.Stop()
 }
 
-func createDiskQueue(topicName string, config config.DiskConfig) (*backend.DiskQueue, error) {
-	diskQueue := backend.NewDiskQueue(config)
+func createDiskQueue(topicName string, config config.DiskConfig) (*queue.DiskQueue, error) {
+	diskQueue := queue.NewDiskQueue(config)
 	diskQueue.SetTopic(topicName)
 	err := diskQueue.Start()
 	if err != nil {

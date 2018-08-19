@@ -34,8 +34,8 @@
   version = "2.6.0"
 
 [[constraint]]
-  name = "github.com/garyburd/redigo"
-  version = "1.5.0"
+  name = "github.com/gomodule/redigo"
+  version = "2.0.0"
 
 [[constraint]]
   name = "github.com/jolestar/go-commons-pool"

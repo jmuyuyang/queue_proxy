@@ -76,7 +76,9 @@ func createKafkaQueuePool(config config.QueueAttrConfig) *pool.ObjectPool {
 	cfg := pool.NewDefaultPoolConfig()
 	cfg.MaxIdle = config.PoolSize
 	cfg.MinEvictableIdleTimeMillis = 1000 * DEFAULT_QUEUE_IDLE_TIMEOUT //10分钟空闲时间
-	return pool.NewObjectPool(poolFactory, cfg)
+	abandonedCfg := pool.NewDefaultAbandonedConfig()
+	abandonedCfg.RemoveAbandonedTimeout = 1000 * DEFAULT_QUEUE_ABANDON_TIMEOUT //10分钟未
+	return pool.NewObjectPoolWithAbandonedConfig(poolFactory, cfg, abandonedCfg)
 }
 
 func newKafkaQueue(config config.QueueAttrConfig) kafkaQueue {

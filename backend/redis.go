@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	rd "github.com/garyburd/redigo/redis"
+	rd "github.com/gomodule/redigo/redis"
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/util"
 	"github.com/satori/go.uuid"
@@ -164,7 +164,14 @@ func (q *RedisQueueProducer) Stop() error {
 * 开启pipeline
  */
 func (q *RedisQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
-	conn := q.pool.Get()
+	timeout := time.Duration(q.config.Timeout) * time.Second
+	conn, err := rd.Dial("tcp", q.config.Bind,
+		rd.DialConnectTimeout(timeout),
+		rd.DialReadTimeout(timeout),
+		rd.DialWriteTimeout(timeout))
+	if err != nil {
+		return nil, err
+	}
 	pipelineQueue := &RedisPipelineProducer{
 		conn:  conn,
 		topic: q.topic,

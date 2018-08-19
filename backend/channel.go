@@ -4,11 +4,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jmuyuyang/queue_proxy/queue"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
 type QueueProduceChannel struct {
-	queue        *util.BoundedQueue
+	queue        *queue.BoundedQueue
 	producerList []*TransactionProducer
 	stopped      int32
 }
@@ -21,7 +22,7 @@ func NewQueueProduceChannel(queueSize int, workerNum int, onDroppedItem func(ite
 		queueSize = DEFAULT_CHANNEL_SIZE
 	}
 	q := &QueueProduceChannel{
-		queue:        util.NewBoundedQueue(queueSize, onDroppedItem),
+		queue:        queue.NewBoundedQueue(queueSize, onDroppedItem),
 		producerList: make([]*TransactionProducer, 0),
 		stopped:      int32(1),
 	}
