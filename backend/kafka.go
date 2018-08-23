@@ -120,13 +120,17 @@ func (q *kafkaQueue) createTopic() error {
 		TopicDetails: make(map[string]*sarama.TopicDetail),
 	}
 	var partitionNum int32 = 1
+	var replicationNum int16 = 1
 	if _, ok := q.config.Attr["partition_num"]; ok {
 		partitionNum = int32(q.config.Attr["partition_num"].(int))
+	}
+	if _, ok := q.config.Attr["replication_num"]; ok {
+		replicationNum = int16(q.config.Attr["replication_num"].(int))
 	}
 	req.TopicDetails[q.topic] = &sarama.TopicDetail{
 		//默认副本数均为1
 		NumPartitions:     partitionNum,
-		ReplicationFactor: 1,
+		ReplicationFactor: replicationNum,
 	}
 	res, err := broker.CreateTopics(&req)
 	if err != nil {
