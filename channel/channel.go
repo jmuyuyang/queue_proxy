@@ -14,10 +14,15 @@ const (
 	DEFAULT_CHANNEL_WORKER_NUM = 1
 
 	DEFAULT_CHANNEL_TRANSACTION_LEN            = 100    //最大一个batch100条
-	DEFAULT_CHANNEL_TRANSACTION_SIZE           = 409600 //最大一个batch400KB
+	DEFAULT_CHANNEL_TRANSACTION_SIZE           = 131072 //最大一个batch128KB
 	DEFAULT_CHANNEL_TRANSACTION_TIMEOUT        = 10
 	DEFAULT_CHANNEL_TRANSACTION_COMMIT_TIMEOUT = 10
 )
+
+type Data struct {
+	Value string                 `json:"value"`
+	Attr  map[string]interface{} `json:"attr,omitempty"`
+}
 
 type Channel struct {
 	queue        *queue.BoundedQueue
@@ -30,7 +35,7 @@ type Channel struct {
 
 type ChannelSender interface {
 	Start() error
-	Send([]interface{}) error
+	Send([]Data) error
 	IdleCheck()
 	Stop()
 }
@@ -40,13 +45,15 @@ type ChannelSender interface {
 * ftLogPath 错误回滚队列路径
 * onDroppedItem 队列满时数据丢弃方式
  */
-func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item interface{}), onMetaSync func(item interface{}), logf util.LoggerFuncHandler) *Channel {
+func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onMetaSync func(item Data), logf util.LoggerFuncHandler) *Channel {
 	queueSize := cfg.Size
 	if queueSize == 0 {
 		queueSize = DEFAULT_CHANNEL_SIZE
 	}
 	return &Channel{
-		queue:        queue.NewBoundedQueue(queueSize, onDroppedItem),
+		queue: queue.NewBoundedQueue(queueSize, func(item interface{}) {
+			onDroppedItem(item.(Data))
+		}),
 		transManager: NewTransactionManager(cfg.Transaction, onMetaSync, logf),
 		senderList:   make([]ChannelSender, 0),
 		logf:         logf,
@@ -117,7 +124,7 @@ func (q *Channel) startSenderWorker(sender ChannelSender) {
 /**
 * 发送消息
  */
-func (q *Channel) Send(data interface{}) bool {
+func (q *Channel) Send(data Data) bool {
 	return q.queue.Produce(data, time.Duration(DEFAULT_CHANNEL_TRANSACTION_TIMEOUT)*time.Second)
 }
 

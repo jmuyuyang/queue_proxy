@@ -21,7 +21,7 @@ type TransactionManager struct {
 	unconfirmedTrans map[string]TransactionBatch
 	backupQueue      *queue.DiskQueue
 	lastCommit       time.Time
-	onMetaSync       func(interface{})
+	onMetaSync       func(Data)
 	TranChan         chan TransactionBatch
 	stopCh           chan struct{}
 	waitGroup        util.WaitGroupWrapper
@@ -29,10 +29,10 @@ type TransactionManager struct {
 }
 
 type TransactionBatch struct {
-	Id        string        `json:"id"`
-	Retry     int           `json:"retry"`
-	BatchSize int64         `json:"-"`
-	Buffer    []interface{} `json:"datas"`
+	Id        string `json:"id"`
+	Retry     int    `json:"retry"`
+	BatchSize int64  `json:"-"`
+	Buffer    []Data `json:"datas"`
 }
 
 /**
@@ -45,22 +45,19 @@ func (t *TransactionBatch) MarshalJson() ([]byte, error) {
 /**
 * 添加数据进事务批次
  */
-func (t *TransactionBatch) Append(data interface{}) {
+func (t *TransactionBatch) Append(data Data) {
 	t.Buffer = append(t.Buffer, data)
-	switch data.(type) {
-	case string:
-		t.BatchSize += int64(len(data.(string)))
-	}
+	t.BatchSize += int64(len(data.Value))
 }
 
 /**
 * 返回该事务批次最后一条数据
  */
-func (t *TransactionBatch) LastData() interface{} {
+func (t *TransactionBatch) LastData() Data {
 	return t.Buffer[len(t.Buffer)-1]
 }
 
-func NewTransactionManager(cfg config.TransactionConfig, onMetaSync func(item interface{}), logf util.LoggerFuncHandler) *TransactionManager {
+func NewTransactionManager(cfg config.TransactionConfig, onMetaSync func(item Data), logf util.LoggerFuncHandler) *TransactionManager {
 	if cfg.BatchLen == 0 {
 		cfg.BatchLen = DEFAULT_CHANNEL_TRANSACTION_LEN
 	}
@@ -172,19 +169,21 @@ func (t *TransactionManager) Stop() {
 func (t *TransactionManager) StartTransaction() {
 	t.curTrans = &TransactionBatch{
 		Id:     uuid.NewV4().String(),
-		Buffer: make([]interface{}, 0),
+		Buffer: make([]Data, 0),
 	}
 	t.logf(util.InfoLvl, "start new transaction: "+t.curTrans.Id)
 }
 
 func (t *TransactionManager) Consume(data interface{}) {
-	if t.curTrans == nil {
-		//启动新的事务批次
-		t.StartTransaction()
-	}
-	t.curTrans.Append(data)
-	if t.needCommitTran() {
-		t.Commit()
+	if _, ok := data.(Data); ok {
+		if t.curTrans == nil {
+			//启动新的事务批次
+			t.StartTransaction()
+		}
+		t.curTrans.Append(data.(Data))
+		if t.needCommitTran() {
+			t.Commit()
+		}
 	}
 }
 

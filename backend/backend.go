@@ -3,6 +3,7 @@ package backend
 import (
 	"time"
 
+	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
@@ -72,7 +73,7 @@ func (w *BatchProducer) Start() error {
 	return err
 }
 
-func (w *BatchProducer) Send(items []interface{}) error {
+func (w *BatchProducer) Send(items []channel.Data) error {
 	if w.producer == nil {
 		err := w.Start()
 		if err != nil {
@@ -81,7 +82,7 @@ func (w *BatchProducer) Send(items []interface{}) error {
 	}
 	msgList := make([][]byte, 0)
 	for _, item := range items {
-		msgList = append(msgList, []byte(item.(string)))
+		msgList = append(msgList, []byte(item.Value))
 	}
 	err := w.producer.SendMessages(msgList)
 	if err != nil {
