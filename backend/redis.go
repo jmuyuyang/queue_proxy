@@ -1,14 +1,10 @@
 package backend
 
 import (
-	"math"
-	"sync"
 	"time"
 
 	rd "github.com/gomodule/redigo/redis"
 	"github.com/jmuyuyang/queue_proxy/config"
-	"github.com/jmuyuyang/queue_proxy/util"
-	"github.com/satori/go.uuid"
 )
 
 const (
@@ -32,6 +28,7 @@ type RedisPipelineProducer struct {
 	curBufferSize int32
 }
 
+/*
 type RedisQueueConsumer struct {
 	redisQueue
 	clientID         [ClientIDLength]byte
@@ -45,6 +42,7 @@ type RedisQueueConsumer struct {
 	waitGroup        util.WaitGroupWrapper
 	workerNum        int
 }
+*/
 
 func createRedisQueuePool(host string, connTimeout, idleTimeout time.Duration, maxConn int) *rd.Pool {
 	pool := &rd.Pool{
@@ -201,6 +199,7 @@ func (q *RedisPipelineProducer) Stop() error {
 	return q.conn.Close()
 }
 
+/*
 func NewRedisQueueConsumer(config config.QueueAttrConfig, options *Options) *RedisQueueConsumer {
 	pqSize := int(math.Max(1, float64(options.MemQueueSize)/2))
 	clientId := uuid.NewV4()
@@ -390,3 +389,4 @@ func (c *RedisQueueConsumer) processInFlightQueue(t int64) error {
 exit:
 	return err
 }
+*/

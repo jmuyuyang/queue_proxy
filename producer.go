@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jmuyuyang/queue_proxy/backend"
+	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/queue"
 	"github.com/jmuyuyang/queue_proxy/rateio"
@@ -230,11 +231,7 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 func (q *QueueProducerObject) startBackendLoop() {
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	q.pauseChan = make(chan bool)
-	queueChannel := backend.NewQueueProduceChannel(q.config.ChannelConfig.Size, q.config.ChannelConfig.WorkerNum, func(item interface{}) {
-		q.diskQueue.SendMessage(item.([]byte))
-	}, func() (backend.BatchQueueProducer, error) {
-		return q.queue.StartBatchProducer()
-	}, q.logFunc)
+	queueChannel := q.createDataChannel()
 	var pause bool = false
 	var r chan []byte
 	queueChannel.Start()
@@ -245,7 +242,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 				//等待限速
 				q.rateController.Assign(true)
 			}
-			if !queueChannel.SendMessage(dataByte) {
+			if !queueChannel.Send(string(dataByte)) {
 				q.logFunc(util.InfoLvl, "channel queue is full capacity")
 				//发送失败,说明channel队列容量已满,尝试延迟重试
 				r = nil
@@ -257,7 +254,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 			if q.queue != nil {
 				if q.queue.CheckActive() {
 					q.logFunc(util.DebugLvl, "checked connected successed")
-					if r == nil {
+					if r == nil && queueChannel.Size() < queueChannel.Capacity() {
 						r = q.diskQueue.GetMessageChan()
 					}
 					queueChannel.Start()
@@ -273,13 +270,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 			}
 			if q.queue != nil && q.queue.IsActive() {
 				//主动发起的队列检测，仅当queue is active时才触发
-				if q.queue.CheckActive() {
-					q.logFunc(util.DebugLvl, "checked connected successed")
-					if r == nil {
-						r = q.diskQueue.GetMessageChan()
-					}
-					queueChannel.Start()
-				} else {
+				if !q.queue.CheckActive() {
 					q.logFunc(util.InfoLvl, "checked connected failed")
 					queueChannel.Pause()
 					r = nil
@@ -299,6 +290,31 @@ exit:
 	checkQueueTicker.Stop()
 }
 
+/**
+* 创建数据传输管道(channel)
+ */
+func (q *QueueProducerObject) createDataChannel() *channel.Channel {
+	workerNum := q.config.ChannelConfig.WorkerNum
+	if workerNum == 0 {
+		workerNum = channel.DEFAULT_CHANNEL_WORKER_NUM
+	}
+	cfg := q.config.ChannelConfig
+	cfg.Transaction.FtLogPath = q.diskQueue.GetDataPath()
+	channel := channel.NewDataChannel(cfg, func(item interface{}) {
+		q.diskQueue.SendMessage([]byte(item.(string)))
+	}, nil, q.logFunc)
+	for i := 0; i < workerNum; i++ {
+		sender := backend.NewBatchProducer(func() (backend.BatchQueueProducer, error) {
+			return q.queue.StartBatchProducer()
+		})
+		channel.AddSender(sender)
+	}
+	return channel
+}
+
+/**
+* 创建本地磁盘队列
+ */
 func createDiskQueue(topicName string, config config.DiskConfig) (*queue.DiskQueue, error) {
 	diskQueue := queue.NewDiskQueue(config)
 	diskQueue.SetTopic(topicName)

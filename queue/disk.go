@@ -16,7 +16,10 @@ import (
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
-const MaxBytesPerFile = 2 * 1024 * 1024 * 1024
+const (
+	MaxBytesPerFile = 1 * 1024 * 1024 * 1024 //最大单文件大小1GB
+	MaxMsgSize      = 10 * 1024 * 1024       //最大单条数据大小10MB
+)
 
 type Compressor interface {
 	Compress(string, bool) error
@@ -222,12 +225,17 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 		}
 		d.reader = bufio.NewReader(d.readFile)
 	}
-
 	err = binary.Read(d.reader, binary.BigEndian, &msgSize)
 	if err != nil {
 		d.readFile.Close()
 		d.readFile = nil
 		return nil, err
+	}
+
+	if msgSize < 0 || msgSize > MaxMsgSize {
+		d.readFile.Close()
+		d.readFile = nil
+		return nil, fmt.Errorf("invalid message read size (%d)", msgSize)
 	}
 
 	readBuf := make([]byte, msgSize)

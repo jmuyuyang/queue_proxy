@@ -226,7 +226,7 @@ func (q *KafkaAsyncProducer) Topic() string {
 func (q *KafkaAsyncProducer) SendMessages(items [][]byte) error {
 	msgList := make([]*sarama.ProducerMessage, 0)
 	for _, item := range items {
-		msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(item))}
+		msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.ByteEncoder(item)}
 		msgList = append(msgList, msg)
 	}
 	return q.producer.SendMessages(msgList)

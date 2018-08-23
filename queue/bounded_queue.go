@@ -24,9 +24,7 @@ type BoundedQueue struct {
 
 type BoundedQueueWorker interface {
 	Consume(item interface{})
-	IdleTimeout() time.Duration
 	IdleCheck()
-	Stop()
 }
 
 // NewBoundedQueue constructs the new queue of specified capacity, and with an optional
@@ -40,37 +38,24 @@ func NewBoundedQueue(capacity int, onDroppedItem func(item interface{})) *Bounde
 	}
 }
 
-func (q *BoundedQueue) AddConsumerWorker(worker BoundedQueueWorker) {
+func (q *BoundedQueue) AddConsumeWorker(worker BoundedQueueWorker) {
 	q.stopWG.Add(1)
 	go func() {
-		var idleTicker *time.Ticker
-		if worker.IdleTimeout() >= time.Second {
-			idleTicker = time.NewTicker(worker.IdleTimeout())
-		}
 		defer q.stopWG.Done()
+		timer := time.NewTicker(time.Second)
 		for {
 			select {
 			case item := <-q.items:
 				atomic.AddInt32(&q.size, -1)
 				worker.Consume(item)
-			case <-idleTicker.C:
+			case <-timer.C:
 				worker.IdleCheck()
 			case <-q.stopCh:
-				idleTicker.Stop()
-				worker.Stop()
+				timer.Stop()
 				return
 			}
 		}
 	}()
-}
-
-/**
-* pause consumer worker
- */
-func (q *BoundedQueue) StopConsumeWorker(num int) {
-	for i := 0; i < num; i++ {
-		q.stopCh <- struct{}{}
-	}
 }
 
 // Produce is used by the producer to submit new item to the queue. Returns false in case of queue overflow.
@@ -91,18 +76,23 @@ func (q *BoundedQueue) Produce(item interface{}, timeout time.Duration) bool {
 	}
 }
 
+/**
+* 停止消费worker
+ */
+func (q *BoundedQueue) StopConsumeWorker() {
+	q.stopCh <- struct{}{}
+	q.stopWG.Wait()
+}
+
 // Stop stops all consumers, as well as the length reporter if started,
 // and releases the items channel. It blocks until all consumers have stopped.
 func (q *BoundedQueue) Stop() {
-	atomic.StoreInt32(&q.stopped, 1) // disable producer
+	atomic.StoreInt32(&q.stopped, 1)
 	close(q.stopCh)
 	q.stopWG.Wait()
 	close(q.items)
 	if q.onDroppedItem != nil {
 		for item := range q.items {
-			if len(item.([]byte)) <= 0 {
-				return
-			}
 			q.onDroppedItem(item)
 		}
 	}
