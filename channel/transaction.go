@@ -203,6 +203,7 @@ func (t *TransactionManager) needCommitTran() bool {
 		return true
 	}
 	if len(t.curTrans.Buffer) > 0 && time.Now().Sub(t.lastCommit).Seconds() > DEFAULT_CHANNEL_TRANSACTION_TIMEOUT {
+		//最长事务留存时间超过限制
 		return true
 	}
 	return false

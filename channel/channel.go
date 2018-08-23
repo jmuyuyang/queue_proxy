@@ -20,8 +20,8 @@ const (
 )
 
 type Data struct {
-	Value string                 `json:"value"`
-	Attr  map[string]interface{} `json:"attr,omitempty"`
+	Value string                 `json:"val"`
+	Attr  map[string]interface{} `json:"-"`
 }
 
 type Channel struct {
