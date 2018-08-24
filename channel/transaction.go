@@ -129,17 +129,19 @@ func (t *TransactionManager) Pause() {
 	t.stopCh <- struct{}{}
 	t.waitGroup.Wait()
 	close(t.TranChan)
+	t.transLock.Lock()
 	if t.curTrans != nil && t.onMetaSync == nil {
 		//如果没有元数据同步机制, 则当前未提交事务需要回滚
-		t.Rollback(*t.curTrans)
+		t.rollback(*t.curTrans)
 		t.curTrans = nil
 	}
 	if len(t.unconfirmedTrans) > 0 {
 		//未确认事务回滚
 		for _, tran := range t.unconfirmedTrans {
-			t.Rollback(tran)
+			t.rollback(tran)
 		}
 	}
+	t.transLock.Unlock()
 }
 
 /**
@@ -149,17 +151,19 @@ func (t *TransactionManager) Stop() {
 	close(t.stopCh)
 	t.waitGroup.Wait()
 	close(t.TranChan)
+	t.transLock.Lock()
 	if t.curTrans != nil && t.onMetaSync == nil {
 		//如果没有元数据同步机制, 则当前未提交事务需要回滚
-		t.Rollback(*t.curTrans)
+		t.rollback(*t.curTrans)
 		t.curTrans = nil
 	}
 	if len(t.unconfirmedTrans) > 0 {
 		//未确认事务回滚
 		for _, tran := range t.unconfirmedTrans {
-			t.Rollback(tran)
+			t.rollback(tran)
 		}
 	}
+	t.transLock.Unlock()
 	t.backupQueue.Stop()
 }
 
@@ -234,7 +238,9 @@ func (t *TransactionManager) Commit() {
 		case <-time.After(time.Duration(t.cfg.CommitTimeout) * time.Second):
 			//事务提交超时
 			t.logf(util.InfoLvl, "commit transaction: "+t.curTrans.Id+" timeout")
-			t.Rollback(tran)
+			t.transLock.Lock()
+			t.rollback(tran)
+			t.transLock.Unlock()
 		}
 		t.curTrans = nil
 	}
@@ -259,11 +265,19 @@ func (t *TransactionManager) Rollback(tran TransactionBatch) {
 	t.transLock.Lock()
 	defer t.transLock.Unlock()
 	if _, ok := t.unconfirmedTrans[tran.Id]; ok {
-		transBytes, err := tran.MarshalJson()
-		if err == nil {
-			t.backupQueue.SendMessage(transBytes)
+		if t.cfg.FailSleep > 0 {
+			//失败重试休眠机制,阻塞式,避免崩溃式失败
+			time.Sleep(time.Duration(t.cfg.FailSleep) * time.Second)
 		}
-		delete(t.unconfirmedTrans, tran.Id)
-		t.logf(util.InfoLvl, "rollback transaction: "+tran.Id)
+		t.rollback(tran)
 	}
+}
+
+func (t *TransactionManager) rollback(tran TransactionBatch) {
+	transBytes, err := tran.MarshalJson()
+	if err == nil {
+		t.backupQueue.SendMessage(transBytes)
+	}
+	delete(t.unconfirmedTrans, tran.Id)
+	t.logf(util.InfoLvl, "rollback transaction: "+tran.Id)
 }

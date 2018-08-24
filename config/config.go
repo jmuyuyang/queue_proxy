@@ -29,7 +29,7 @@ type TransactionConfig struct {
 	BatchLen      int    `yaml:"batch_len"`
 	BatchSize     int64  `yaml:"batch_size"`
 	CommitTimeout int    `yaml:"commit_timeout"`
-	FailRetry     int    `yaml:"fail_retry"`
+	FailSleep     int    `yaml:"fail_sleep"`
 }
 
 type QueueConfig struct {
