@@ -27,13 +27,13 @@ type Data struct {
 type Channel struct {
 	queue        *queue.BoundedQueue
 	transManager *TransactionManager
-	senderList   []ChannelSender
+	senderList   []Sender
 	logf         util.LoggerFuncHandler
 	exitChan     chan struct{}
 	stopped      int32
 }
 
-type ChannelSender interface {
+type Sender interface {
 	Start() error
 	Send([]Data) error
 	IdleCheck()
@@ -55,7 +55,7 @@ func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onM
 			onDroppedItem(item.(Data))
 		}),
 		transManager: NewTransactionManager(cfg.Transaction, onMetaSync, logf),
-		senderList:   make([]ChannelSender, 0),
+		senderList:   make([]Sender, 0),
 		logf:         logf,
 		exitChan:     make(chan struct{}),
 		stopped:      int32(1),
@@ -95,14 +95,14 @@ func (q *Channel) IsStopped() bool {
 /**
 * 添加消费worker
  */
-func (q *Channel) AddSender(sender ChannelSender) {
+func (q *Channel) AddSender(sender Sender) {
 	q.senderList = append(q.senderList, sender)
 }
 
 /**
 * 启动sender worker
  */
-func (q *Channel) startSenderWorker(sender ChannelSender) {
+func (q *Channel) startSenderWorker(sender Sender) {
 	go func() {
 		idleTicker := time.NewTicker(5 * time.Second)
 		for {
