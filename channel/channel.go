@@ -42,8 +42,8 @@ type ChannelSender interface {
 
 /**
 * 创建新的数据 channel
-* ftLogPath 错误回滚队列路径
 * onDroppedItem 队列满时数据丢弃方式
+* onMetaSync 元数据同步方法
  */
 func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onMetaSync func(item Data), logf util.LoggerFuncHandler) *Channel {
 	queueSize := cfg.Size
@@ -65,13 +65,13 @@ func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onM
 /**
 * 启动channel
  */
-func (q *Channel) Start() {
+func (q *Channel) Start() bool {
 	if atomic.LoadInt32(&q.stopped) == 1 {
 		for _, sender := range q.senderList {
 			err := sender.Start()
 			if err != nil {
 				q.logf(util.ErrorLvl, "start sender worker error:"+err.Error())
-				return
+				return false
 			}
 		}
 		//sender全部自启动成功才进入消费模式
@@ -82,6 +82,14 @@ func (q *Channel) Start() {
 		}
 		q.queue.AddConsumeWorker(q.transManager)
 	}
+	return true
+}
+
+/**
+* 判断channel是否停止状态
+ */
+func (q *Channel) IsStopped() bool {
+	return atomic.LoadInt32(&q.stopped) == 1
 }
 
 /**

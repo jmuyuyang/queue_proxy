@@ -234,7 +234,10 @@ func (q *QueueProducerObject) startBackendLoop() {
 	queueChannel := q.createDataChannel()
 	var pause bool = false
 	var r chan []byte
-	queueChannel.Start()
+	if queueChannel.Start() {
+		//channel启动成功,则直接开始读取传输数据
+		r = q.diskQueue.GetMessageChan()
+	}
 	for {
 		select {
 		case dataByte := <-r:
@@ -254,10 +257,12 @@ func (q *QueueProducerObject) startBackendLoop() {
 			if q.queue != nil {
 				if q.queue.CheckActive() {
 					q.logFunc(util.DebugLvl, "checked connected successed")
-					if r == nil && queueChannel.Size() < queueChannel.Capacity() {
-						r = q.diskQueue.GetMessageChan()
+					if queueChannel.Start() {
+						//channel启动成功,则直接开始读取传输数据
+						if r == nil {
+							r = q.diskQueue.GetMessageChan()
+						}
 					}
-					queueChannel.Start()
 				} else {
 					q.logFunc(util.InfoLvl, "checked connected failed")
 					queueChannel.Pause()
