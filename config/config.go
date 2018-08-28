@@ -27,7 +27,7 @@ type ChannelConfig struct {
 type TransactionConfig struct {
 	FtLogPath     string `yaml:"fault_log_path"`
 	BatchLen      int    `yaml:"batch_len"`
-	BatchSize     int64  `yaml:"batch_size"`
+	BatchInterval int    `yaml:"batch_interval"`
 	CommitTimeout int    `yaml:"commit_timeout"`
 	FailSleep     int    `yaml:"fail_sleep"`
 }

@@ -61,8 +61,8 @@ func NewTransactionManager(cfg config.TransactionConfig, onMetaSync func(item Da
 	if cfg.BatchLen == 0 {
 		cfg.BatchLen = DEFAULT_CHANNEL_TRANSACTION_LEN
 	}
-	if cfg.BatchSize == 0 {
-		cfg.BatchSize = int64(DEFAULT_CHANNEL_TRANSACTION_SIZE)
+	if cfg.BatchInterval == 0 {
+		cfg.BatchInterval = DEFAULT_CHANNEL_TRANSACTION_TIMEOUT
 	}
 	if cfg.CommitTimeout == 0 {
 		cfg.CommitTimeout = DEFAULT_CHANNEL_TRANSACTION_COMMIT_TIMEOUT
@@ -202,11 +202,11 @@ func (t *TransactionManager) needCommitTran() bool {
 		//批次长度超限制
 		return true
 	}
-	if t.curTrans.BatchSize >= t.cfg.BatchSize {
+	if t.curTrans.BatchSize >= DEFAULT_CHANNEL_TRANSACTION_SIZE {
 		//批次大小超限制
 		return true
 	}
-	if len(t.curTrans.Buffer) > 0 && time.Now().Sub(t.lastCommit).Seconds() > DEFAULT_CHANNEL_TRANSACTION_TIMEOUT {
+	if len(t.curTrans.Buffer) > 0 && time.Now().Sub(t.lastCommit).Seconds() > float64(t.cfg.BatchInterval) {
 		//最长事务留存时间超过限制
 		return true
 	}
