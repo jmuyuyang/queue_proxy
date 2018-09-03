@@ -1,7 +1,6 @@
 package channel
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -197,7 +196,6 @@ func (t *TransactionManager) Consume(item interface{}) {
 		t.uncommitedTrans[gid] = curTran
 		if t.needCommitTran(*curTran) {
 			t.Commit(*curTran)
-			fmt.Println(t.uncommitedTrans)
 			delete(t.uncommitedTrans, gid)
 		}
 		t.commitLock.Unlock()
