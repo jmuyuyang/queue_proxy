@@ -1,14 +1,14 @@
 package channel
 
 import (
+	"fmt"
 	"sync"
 	"time"
-
-	"github.com/json-iterator/go"
 
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/queue"
 	"github.com/jmuyuyang/queue_proxy/util"
+	"github.com/json-iterator/go"
 	"github.com/satori/go.uuid"
 )
 
@@ -16,11 +16,11 @@ var jsontool = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type TransactionManager struct {
 	cfg              config.TransactionConfig
-	curTrans         *TransactionBatch
-	transLock        sync.Mutex
+	commitLock       sync.Mutex
+	uncommitedTrans  map[string]*TransactionBatch
+	confirmLock      sync.Mutex
 	unconfirmedTrans map[string]TransactionBatch
 	backupQueue      *queue.DiskQueue
-	lastCommit       time.Time
 	onMetaSync       func(Data)
 	TranChan         chan TransactionBatch
 	stopCh           chan struct{}
@@ -29,10 +29,10 @@ type TransactionManager struct {
 }
 
 type TransactionBatch struct {
-	Id        string `json:"id"`
-	Retry     int    `json:"retry"`
-	BatchSize int64  `json:"-"`
-	Buffer    []Data `json:"datas"`
+	Id        string    `json:"id"`
+	BatchSize int64     `json:"-"`
+	Buffer    []Data    `json:"datas"`
+	StartTime time.Time `json:"-"`
 }
 
 /**
@@ -78,8 +78,8 @@ func NewTransactionManager(cfg config.TransactionConfig, onMetaSync func(item Da
 	bq.Start()
 	return &TransactionManager{
 		cfg:              cfg,
+		uncommitedTrans:  make(map[string]*TransactionBatch, 0),
 		unconfirmedTrans: make(map[string]TransactionBatch, 0),
-		lastCommit:       time.Now(),
 		backupQueue:      bq,
 		onMetaSync:       onMetaSync,
 		stopCh:           make(chan struct{}),
@@ -102,9 +102,9 @@ func (t *TransactionManager) Start(tranBufferSize int) {
 				if err == nil {
 					select {
 					case t.TranChan <- tran:
-						t.transLock.Lock()
+						t.confirmLock.Lock()
 						t.unconfirmedTrans[tran.Id] = tran
-						t.transLock.Unlock()
+						t.confirmLock.Unlock()
 						t.logf(util.InfoLvl, "commit transaction from backup queue: "+tran.Id)
 					case <-time.After(time.Duration(t.cfg.CommitTimeout) * time.Second):
 						//事务提交超时
@@ -129,19 +129,7 @@ func (t *TransactionManager) Pause() {
 	t.stopCh <- struct{}{}
 	t.waitGroup.Wait()
 	close(t.TranChan)
-	t.transLock.Lock()
-	if t.curTrans != nil && t.onMetaSync == nil {
-		//如果没有元数据同步机制, 则当前未提交事务需要回滚
-		t.rollback(*t.curTrans)
-		t.curTrans = nil
-	}
-	if len(t.unconfirmedTrans) > 0 {
-		//未确认事务回滚
-		for _, tran := range t.unconfirmedTrans {
-			t.rollback(tran)
-		}
-	}
-	t.transLock.Unlock()
+	t.wholeRollback()
 }
 
 /**
@@ -151,62 +139,88 @@ func (t *TransactionManager) Stop() {
 	close(t.stopCh)
 	t.waitGroup.Wait()
 	close(t.TranChan)
-	t.transLock.Lock()
-	if t.curTrans != nil && t.onMetaSync == nil {
+	t.wholeRollback()
+	t.backupQueue.Stop()
+}
+
+/**
+* 所有未确认/提交事务整体回滚
+ */
+func (t *TransactionManager) wholeRollback() {
+	t.commitLock.Lock()
+	if len(t.uncommitedTrans) > 0 && t.onMetaSync == nil {
 		//如果没有元数据同步机制, 则当前未提交事务需要回滚
-		t.rollback(*t.curTrans)
-		t.curTrans = nil
-	}
-	if len(t.unconfirmedTrans) > 0 {
-		//未确认事务回滚
-		for _, tran := range t.unconfirmedTrans {
-			t.rollback(tran)
+		for gid, tran := range t.uncommitedTrans {
+			t.rollback(*tran)
+			delete(t.uncommitedTrans, gid)
 		}
 	}
-	t.transLock.Unlock()
-	t.backupQueue.Stop()
+	t.commitLock.Unlock()
+	t.confirmLock.Lock()
+	if len(t.unconfirmedTrans) > 0 {
+		//未确认事务回滚
+		for tid, tran := range t.unconfirmedTrans {
+			t.rollback(tran)
+			delete(t.unconfirmedTrans, tid)
+		}
+	}
+	t.confirmLock.Unlock()
 }
 
 /**
 * 启动新事务
  */
-func (t *TransactionManager) StartTransaction() {
-	t.curTrans = &TransactionBatch{
-		Id:     uuid.NewV4().String(),
-		Buffer: make([]Data, 0),
+func (t *TransactionManager) StartTransaction() *TransactionBatch {
+	tran := &TransactionBatch{
+		Id:        uuid.NewV4().String(),
+		Buffer:    make([]Data, 0),
+		StartTime: time.Now(),
 	}
-	t.logf(util.InfoLvl, "start new transaction: "+t.curTrans.Id)
+	t.logf(util.InfoLvl, "start new transaction: "+tran.Id)
+	return tran
 }
 
-func (t *TransactionManager) Consume(data interface{}) {
-	if _, ok := data.(Data); ok {
-		if t.curTrans == nil {
-			//启动新的事务批次
-			t.StartTransaction()
+func (t *TransactionManager) Consume(item interface{}) {
+	data, ok := item.(Data)
+	if ok {
+		var gid string = "default"
+		if data.Gid != "" {
+			gid = data.Gid
 		}
-		t.curTrans.Append(data.(Data))
-		if t.needCommitTran() {
-			t.Commit()
+		//同一个gid在同一个事务批次,满足多分片reader->单channel
+		t.commitLock.Lock()
+		curTran, ok := t.uncommitedTrans[gid]
+		if !ok {
+			curTran = t.StartTransaction()
 		}
+		curTran.Append(data)
+		t.uncommitedTrans[gid] = curTran
+		if t.needCommitTran(*curTran) {
+			t.Commit(*curTran)
+			fmt.Println(t.uncommitedTrans)
+			delete(t.uncommitedTrans, gid)
+		}
+		t.commitLock.Unlock()
 	}
 }
 
 /**
 * 判断事务批次是否需要提交
  */
-func (t *TransactionManager) needCommitTran() bool {
-	if t.curTrans == nil {
+func (t *TransactionManager) needCommitTran(tran TransactionBatch) bool {
+	if len(tran.Buffer) == 0 {
 		return false
 	}
-	if len(t.curTrans.Buffer) >= t.cfg.BatchLen {
+
+	if len(tran.Buffer) >= t.cfg.BatchLen {
 		//批次长度超限制
 		return true
 	}
-	if t.curTrans.BatchSize >= DEFAULT_CHANNEL_TRANSACTION_SIZE {
+	if tran.BatchSize >= DEFAULT_CHANNEL_TRANSACTION_SIZE {
 		//批次大小超限制
 		return true
 	}
-	if len(t.curTrans.Buffer) > 0 && time.Now().Sub(t.lastCommit).Seconds() > float64(t.cfg.BatchInterval) {
+	if time.Now().Sub(tran.StartTime).Seconds() > float64(t.cfg.BatchInterval) {
 		//最长事务留存时间超过限制
 		return true
 	}
@@ -214,35 +228,33 @@ func (t *TransactionManager) needCommitTran() bool {
 }
 
 func (t *TransactionManager) IdleCheck() {
-	if t.needCommitTran() {
-		t.Commit()
+	t.commitLock.Lock()
+	for gid, tran := range t.uncommitedTrans {
+		if t.needCommitTran(*tran) {
+			t.Commit(*tran)
+			delete(t.uncommitedTrans, gid)
+		}
 	}
+	t.commitLock.Unlock()
 }
 
 /**
 * 提交当前事务
  */
-func (t *TransactionManager) Commit() {
-	if t.curTrans != nil {
-		tran := *t.curTrans
-		t.transLock.Lock()
-		t.unconfirmedTrans[t.curTrans.Id] = tran
-		t.transLock.Unlock()
-		select {
-		case t.TranChan <- tran:
-			if t.onMetaSync != nil {
-				t.onMetaSync(t.curTrans.LastData())
-			}
-			t.lastCommit = time.Now()
-			t.logf(util.InfoLvl, "commit transaction: "+t.curTrans.Id)
-		case <-time.After(time.Duration(t.cfg.CommitTimeout) * time.Second):
-			//事务提交超时
-			t.logf(util.InfoLvl, "commit transaction: "+t.curTrans.Id+" timeout")
-			t.transLock.Lock()
-			t.rollback(tran)
-			t.transLock.Unlock()
+func (t *TransactionManager) Commit(tran TransactionBatch) {
+	select {
+	case t.TranChan <- tran:
+		if t.onMetaSync != nil {
+			t.onMetaSync(tran.LastData())
 		}
-		t.curTrans = nil
+		t.logf(util.InfoLvl, "commit transaction: "+tran.Id)
+		t.confirmLock.Lock()
+		t.unconfirmedTrans[tran.Id] = tran
+		t.confirmLock.Unlock()
+	case <-time.After(time.Duration(t.cfg.CommitTimeout) * time.Second):
+		//事务提交超时
+		t.logf(util.InfoLvl, "commit transaction: "+tran.Id+" timeout")
+		t.rollback(tran)
 	}
 }
 
@@ -250,8 +262,8 @@ func (t *TransactionManager) Commit() {
 * 确认某批次事务
  */
 func (t *TransactionManager) Confirm(tran TransactionBatch) {
-	t.transLock.Lock()
-	defer t.transLock.Unlock()
+	t.confirmLock.Lock()
+	defer t.confirmLock.Unlock()
 	if _, ok := t.unconfirmedTrans[tran.Id]; ok {
 		delete(t.unconfirmedTrans, tran.Id)
 		t.logf(util.InfoLvl, "confirm transaction: "+tran.Id)
@@ -262,14 +274,15 @@ func (t *TransactionManager) Confirm(tran TransactionBatch) {
 * 回滚某批次事务
  */
 func (t *TransactionManager) Rollback(tran TransactionBatch) {
-	t.transLock.Lock()
-	defer t.transLock.Unlock()
+	t.confirmLock.Lock()
+	defer t.confirmLock.Unlock()
 	if _, ok := t.unconfirmedTrans[tran.Id]; ok {
 		if t.cfg.FailSleep > 0 {
 			//失败重试休眠机制,阻塞式,避免崩溃式失败
 			time.Sleep(time.Duration(t.cfg.FailSleep) * time.Second)
 		}
 		t.rollback(tran)
+		delete(t.unconfirmedTrans, tran.Id)
 	}
 }
 
@@ -278,6 +291,5 @@ func (t *TransactionManager) rollback(tran TransactionBatch) {
 	if err == nil {
 		t.backupQueue.SendMessage(transBytes)
 	}
-	delete(t.unconfirmedTrans, tran.Id)
 	t.logf(util.InfoLvl, "rollback transaction: "+tran.Id)
 }

@@ -20,8 +20,9 @@ const (
 )
 
 type Data struct {
+	Gid   string                 `json:"gid"`
 	Value string                 `json:"val"`
-	Attr  map[string]interface{} `json:"-"`
+	Meta  map[string]interface{} `json:"-"`
 }
 
 type Channel struct {
@@ -97,6 +98,13 @@ func (q *Channel) IsStopped() bool {
  */
 func (q *Channel) AddSender(sender Sender) {
 	q.senderList = append(q.senderList, sender)
+}
+
+/**
+* 获取sender列表
+ */
+func (q *Channel) GetSenderList() []Sender {
+	return q.senderList
 }
 
 /**
