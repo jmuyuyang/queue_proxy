@@ -51,13 +51,6 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 }
 
 /**
-* 直接设置queue object
- */
-func (q *QueueProducerObject) SetQueue(queue backend.QueueProducer) {
-	q.queue = queue
-}
-
-/**
 * 初始化queue producer
  */
 func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) {
@@ -78,8 +71,11 @@ func (q *QueueProducerObject) InitQueue(name string, topicName string, queueType
  */
 func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName string) {
 	if q.queue == nil {
-		q.queue = createQueueProducer(q.config.GetQueueConfig(queueTypeName))
-		q.queue.SetTopic(topicName)
+		queueCfg := q.config.GetQueueConfig(queueTypeName)
+		if queueCfg.Name != "" {
+			q.queue = createQueueProducer(queueCfg)
+			q.queue.SetTopic(topicName)
+		}
 	}
 }
 
@@ -122,7 +118,7 @@ func (q *QueueProducerObject) GetTopic() string {
  */
 func (q *QueueProducerObject) Start() {
 	if q.queue == nil {
-		q.logFunc(util.InfoLvl, "cannot find queue source")
+		q.logFunc(util.ErrorLvl, "cannot find queue source")
 	}
 	if q.diskQueue != nil {
 		q.waitGroup.Wrap(q.startBackendLoop)
@@ -137,7 +133,9 @@ func (q *QueueProducerObject) Stop() {
 	defer q.Unlock()
 	close(q.exitChan)
 	q.waitGroup.Wait()
-	q.queue.Stop()
+	if q.queue != nil {
+		q.queue.Stop()
+	}
 	q.diskQueue.Stop()
 }
 
@@ -231,9 +229,9 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 func (q *QueueProducerObject) startBackendLoop() {
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
 	q.pauseChan = make(chan bool)
-	queueChannel := q.createDataChannel()
 	var pause bool = false
 	var r chan []byte
+	queueChannel := q.createDataChannel()
 	if queueChannel.Start() {
 		//channel启动成功,则直接开始读取传输数据
 		r = q.diskQueue.GetMessageChan()
@@ -310,6 +308,9 @@ func (q *QueueProducerObject) createDataChannel() *channel.Channel {
 	}, nil, q.logFunc)
 	for i := 0; i < workerNum; i++ {
 		sender := backend.NewBatchProducer(func() (backend.BatchQueueProducer, error) {
+			if q.queue == nil {
+				return nil, fmt.Errorf("backend queue producer has not been init")
+			}
 			return q.queue.StartBatchProducer()
 		})
 		channel.AddSender(sender)
