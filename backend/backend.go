@@ -84,11 +84,17 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 	for _, item := range items {
 		msgList = append(msgList, []byte(item.Value))
 	}
-	err := w.producer.SendMessages(msgList)
-	if err != nil {
-		//批量提交失败则进行一次producer重建
-		w.Stop()
-	}
+	var err error
+	util.WithRecover(func() {
+		err = w.producer.SendMessages(msgList)
+		if err != nil {
+			//批量提交失败则进行一次producer重建
+			w.producer.Stop()
+			w.producer = nil
+		}
+	}, func(err error) {
+		w.producer = nil
+	})
 	w.lastSend = time.Now()
 	return err
 }

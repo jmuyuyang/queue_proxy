@@ -189,6 +189,14 @@ func (q *QueueProducerObject) DisableRateLimit() {
 * 发送消息
  */
 func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println(err)
+			if _, ok := err.(error); ok {
+				q.logFunc(util.ErrorLvl, "send message panic error:"+err.(error).Error())
+			}
+		}
+	}()
 	var addBackendStore bool = false
 	var err error
 	if async {

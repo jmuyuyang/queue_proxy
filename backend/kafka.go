@@ -185,9 +185,8 @@ func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(data))}
 	_, _, err = producer.SendMessage(msg)
 	if err != nil {
-		//出错即关闭链接
+		//出错则destory池内链接
 		q.pool.InvalidateObject(obj)
-		producer.Close()
 		return err
 	}
 	defer q.pool.ReturnObject(producer)
