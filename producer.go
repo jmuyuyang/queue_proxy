@@ -53,30 +53,27 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 /**
 * 初始化queue producer
  */
-func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) {
+func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) error {
 	q.Name = name
 	if q.config.DiskConfig.Path != "" {
-		diskQueue, err := createDiskQueue(name, q.config.DiskConfig)
-		if err == nil {
-			q.diskQueue = diskQueue
-		}
+		q.diskQueue = createDiskQueue(name, q.config.DiskConfig)
 	}
-	if queueTypeName != "" {
-		q.setQueueAttr(queueTypeName, topicName)
-	}
+	return q.setQueueAttr(queueTypeName, topicName)
 }
 
 /*
 * 设置队列相关属性
  */
-func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName string) {
+func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName string) error {
 	if q.queue == nil {
 		queueCfg := q.config.GetQueueConfig(queueTypeName)
-		if queueCfg.Name != "" {
-			q.queue = createQueueProducer(queueCfg)
-			q.queue.SetTopic(topicName)
+		if queueCfg.Name == "" {
+			return fmt.Errorf("cannot find queue config: %s", queueTypeName)
 		}
+		q.queue = createQueueProducer(queueCfg)
+		q.queue.SetTopic(topicName)
 	}
+	return nil
 }
 
 /**
@@ -116,13 +113,18 @@ func (q *QueueProducerObject) GetTopic() string {
 /**
 * disk queue 启动
  */
-func (q *QueueProducerObject) Start() {
+func (q *QueueProducerObject) Start() error {
 	if q.queue == nil {
-		q.logFunc(util.ErrorLvl, "cannot find queue source")
+		return fmt.Errorf("cannot find queue source")
 	}
 	if q.diskQueue != nil {
+		err := q.diskQueue.Start()
+		if err != nil {
+			return err
+		}
 		q.waitGroup.Wrap(q.startBackendLoop)
 	}
+	return nil
 }
 
 /**
@@ -329,14 +331,10 @@ func (q *QueueProducerObject) createDataChannel() *channel.Channel {
 /**
 * 创建本地磁盘队列
  */
-func createDiskQueue(topicName string, config config.DiskConfig) (*queue.DiskQueue, error) {
+func createDiskQueue(topicName string, config config.DiskConfig) *queue.DiskQueue {
 	diskQueue := queue.NewDiskQueue(config)
 	diskQueue.SetTopic(topicName)
-	err := diskQueue.Start()
-	if err != nil {
-		return nil, err
-	}
-	return diskQueue, nil
+	return diskQueue
 }
 
 func createQueueProducer(cfg config.QueueConfig) backend.QueueProducer {
