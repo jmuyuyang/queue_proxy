@@ -30,6 +30,7 @@ type TransactionManager struct {
 type TransactionBatch struct {
 	Id        string    `json:"id"`
 	BatchSize int64     `json:"-"`
+	Retry     int       `json:"retry"`
 	Buffer    []Data    `json:"datas"`
 	StartTime time.Time `json:"-"`
 }
@@ -90,6 +91,7 @@ func (t *TransactionManager) Start(tranBufferSize int) {
 				tran := TransactionBatch{}
 				err := jsontool.Unmarshal(tranBytes, &tran)
 				if err == nil {
+					tran.Retry += 1
 					select {
 					case t.TranChan <- tran:
 						t.confirmLock.Lock()
@@ -97,7 +99,8 @@ func (t *TransactionManager) Start(tranBufferSize int) {
 						t.confirmLock.Unlock()
 						t.logf(util.InfoLvl, "commit transaction from backup queue: "+tran.Id)
 					case <-time.After(time.Duration(t.cfg.CommitTimeout) * time.Second):
-						//事务提交超时
+						//事务提交超时,重试次数回滚
+						tran.Retry -= 1
 						transBytes, err := tran.MarshalJson()
 						if err == nil {
 							t.backupQueue.SendMessage(transBytes)
@@ -163,6 +166,7 @@ func (t *TransactionManager) wholeRollback() {
 func (t *TransactionManager) StartTransaction() *TransactionBatch {
 	tran := &TransactionBatch{
 		Id:        uuid.NewV4().String(),
+		Retry:     0,
 		Buffer:    make([]Data, 0),
 		StartTime: time.Now(),
 	}
@@ -276,6 +280,11 @@ func (t *TransactionManager) Rollback(tran TransactionBatch) {
 }
 
 func (t *TransactionManager) rollback(tran TransactionBatch) {
+	if t.cfg.MaxRetry > 0 && tran.Retry >= t.cfg.MaxRetry {
+		//超过最大重试次数
+		t.logf(util.WarnLvl, "transaction: "+tran.Id+" rollback above max retry time")
+		return
+	}
 	transBytes, err := tran.MarshalJson()
 	if err == nil {
 		t.backupQueue.SendMessage(transBytes)

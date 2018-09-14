@@ -29,6 +29,7 @@ type TransactionConfig struct {
 	BatchLen      int    `yaml:"batch_len"`
 	BatchInterval int    `yaml:"batch_interval"`
 	CommitTimeout int    `yaml:"commit_timeout"`
+	MaxRetry      int    `yaml:"max_retry"`
 	FailSleep     int    `yaml:"fail_sleep"`
 }
 
