@@ -2,15 +2,9 @@ package backend
 
 import (
 	"sync"
-	"time"
 
 	"github.com/jmuyuyang/ali_mns"
 	"github.com/jmuyuyang/queue_proxy/config"
-)
-
-const (
-	MESSAGE_BUFFER_SIZE          = 10
-	MESSAGE_BUFFER_FLUSH_TIMEOUT = 2
 )
 
 type mnsQueue struct {
@@ -24,11 +18,9 @@ type MnsQueueProducer struct {
 	mnsQueue
 }
 
-type MnsPipelineProducer struct {
-	queue       ali_mns.AliMNSQueue
-	dataBuffer  []ali_mns.MessageSendRequest
-	messageChan chan ali_mns.MessageSendRequest
-	exitChan    chan int
+type MnsAsyncProducer struct {
+	queue ali_mns.AliMNSQueue
+	topic string
 }
 
 func newMnsQueuePool(config config.QueueAttrConfig) sync.Pool {
@@ -96,19 +88,6 @@ func (q *MnsQueueProducer) SendMessage(data []byte) error {
 	return err
 }
 
-func (q *MnsQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
-	queue := q.pool.Get().(ali_mns.AliMNSQueue)
-	queue.SetTopic(q.topic)
-	p := &MnsPipelineProducer{
-		queue:       queue,
-		dataBuffer:  make([]ali_mns.MessageSendRequest, 0),
-		messageChan: make(chan ali_mns.MessageSendRequest),
-		exitChan:    make(chan int),
-	}
-	go p.queueLoop()
-	return p, nil
-}
-
 /**
 * 停止mns queue producer
  */
@@ -116,62 +95,39 @@ func (q *MnsQueueProducer) Stop() error {
 	return nil
 }
 
-func (q *MnsPipelineProducer) SendMessage(data []byte) error {
-	msg := ali_mns.MessageSendRequest{
-		MessageBody: ali_mns.Base64Bytes(data),
-		Priority:    1,
+func (q *MnsQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
+	queue := q.pool.Get().(ali_mns.AliMNSQueue)
+	queue.SetTopic(q.topic)
+	p := &MnsAsyncProducer{
+		queue: queue,
+		topic: q.topic,
 	}
-	q.messageChan <- msg
-	return nil
+	return p, nil
 }
 
-func (q *MnsPipelineProducer) Flush() error {
-	return nil
-}
-
-func (q *MnsPipelineProducer) Stop() error {
-	close(q.exitChan)
-	return nil
+func (q *MnsAsyncProducer) Topic() string {
+	return q.topic
 }
 
 /**
-* 批量异步发送batch message
+* 批量发送mns消息
  */
-func (q *MnsPipelineProducer) queueLoop() {
-	var flushDataBuffer bool = false
-	flushTicker := time.NewTicker(time.Duration(MESSAGE_BUFFER_FLUSH_TIMEOUT) * time.Second)
-	for {
-		select {
-		case msg := <-q.messageChan:
-			q.dataBuffer = append(q.dataBuffer, msg)
-			if len(q.dataBuffer) >= MESSAGE_BUFFER_SIZE {
-				flushDataBuffer = true
-			}
-		case <-flushTicker.C:
-			flushDataBuffer = true
-		case <-q.exitChan:
-			flushDataBuffer = true
-			goto exit
+func (q *MnsAsyncProducer) SendMessages(items [][]byte) error {
+	messageList := make([]ali_mns.MessageSendRequest, 0)
+	for _, item := range items {
+		msg := ali_mns.MessageSendRequest{
+			MessageBody: ali_mns.Base64Bytes(item),
+			Priority:    1,
 		}
+		messageList = append(messageList, msg)
+	}
+	batchMessage := ali_mns.BatchMessageSendRequest{
+		Messages: messageList,
+	}
+	_, err := q.queue.BatchSendMessage(batchMessage)
+	return err
+}
 
-		if flushDataBuffer {
-			if len(q.dataBuffer) > 0 {
-				batchMessage := ali_mns.BatchMessageSendRequest{
-					Messages: q.dataBuffer,
-				}
-				q.queue.BatchSendMessage(batchMessage)
-				q.dataBuffer = make([]ali_mns.MessageSendRequest, 0)
-			}
-			flushDataBuffer = false
-		}
-	}
-exit:
-	flushTicker.Stop()
-	if flushDataBuffer && len(q.dataBuffer) > 0 {
-		batchMessage := ali_mns.BatchMessageSendRequest{
-			Messages: q.dataBuffer,
-		}
-		q.queue.BatchSendMessage(batchMessage)
-		q.dataBuffer = make([]ali_mns.MessageSendRequest, 0)
-	}
+func (q *MnsAsyncProducer) Stop() error {
+	return nil
 }

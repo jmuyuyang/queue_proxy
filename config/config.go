@@ -13,8 +13,23 @@ const (
 )
 
 type Config struct {
-	QueueConfig []QueueConfig `yaml:"queue"`
-	DiskConfig  DiskConfig    `yaml:"disk"`
+	ChannelConfig ChannelConfig `yaml:"channel"`
+	QueueConfig   []QueueConfig `yaml:"queue"`
+	DiskConfig    DiskConfig    `yaml:"disk"`
+}
+
+type ChannelConfig struct {
+	Size        int               `yaml:"queue_size"`
+	WorkerNum   int               `yaml:"worker_num"`
+	Transaction TransactionConfig `yaml:"transaction"`
+}
+
+type TransactionConfig struct {
+	FtLogPath     string `yaml:"fault_log_path"`
+	BatchLen      int    `yaml:"batch_len"`
+	BatchInterval int    `yaml:"batch_interval"`
+	CommitTimeout int    `yaml:"commit_timeout"`
+	FailSleep     int    `yaml:"fail_sleep"`
 }
 
 type QueueConfig struct {

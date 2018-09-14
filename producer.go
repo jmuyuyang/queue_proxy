@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/jmuyuyang/queue_proxy/backend"
+	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/config"
+	"github.com/jmuyuyang/queue_proxy/queue"
 	"github.com/jmuyuyang/queue_proxy/rateio"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
@@ -14,27 +16,18 @@ import (
 const CHECK_QUEUE_TIMEOUT = 5 * time.Second
 const CHECK_QUEUE_CHAIN_BUFFER = 3
 
-type QueueProducer interface {
-	StartPipeline() (backend.PipelineQueueProducer, error)
-	SetTopic(string)
-	GetTopic() string
-	SendMessage([]byte) error
-	CheckActive() bool
-	IsActive() bool
-	Stop() error
-}
-
 type QueueProducerObject struct {
 	sync.RWMutex
 	Name           string
 	config         config.Config
-	queue          QueueProducer
-	diskQueue      *backend.DiskQueue
+	queue          backend.QueueProducer
+	diskQueue      *queue.DiskQueue
 	rateController *rateio.Controller
 	checkQueueChan chan int
 	exitChan       chan int
 	pauseChan      chan bool
 	logFunc        util.LoggerFuncHandler
+	waitGroup      util.WaitGroupWrapper
 }
 
 /*
@@ -58,36 +51,29 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 }
 
 /**
-* 直接设置queue object
- */
-func (q *QueueProducerObject) SetQueue(queue QueueProducer) {
-	q.queue = queue
-}
-
-/**
 * 初始化queue producer
  */
-func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) {
+func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) error {
 	q.Name = name
 	if q.config.DiskConfig.Path != "" {
-		diskQueue, err := createDiskQueue(name, q.config.DiskConfig)
-		if err == nil {
-			q.diskQueue = diskQueue
-		}
+		q.diskQueue = createDiskQueue(name, q.config.DiskConfig)
 	}
-	if queueTypeName != "" {
-		q.setQueueAttr(queueTypeName, topicName)
-	}
+	return q.setQueueAttr(queueTypeName, topicName)
 }
 
 /*
 * 设置队列相关属性
  */
-func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName string) {
+func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName string) error {
 	if q.queue == nil {
-		q.queue = createQueueProducer(q.config.GetQueueConfig(queueTypeName))
+		queueCfg := q.config.GetQueueConfig(queueTypeName)
+		if queueCfg.Name == "" {
+			return fmt.Errorf("cannot find queue config: %s", queueTypeName)
+		}
+		q.queue = createQueueProducer(queueCfg)
 		q.queue.SetTopic(topicName)
 	}
+	return nil
 }
 
 /**
@@ -127,13 +113,18 @@ func (q *QueueProducerObject) GetTopic() string {
 /**
 * disk queue 启动
  */
-func (q *QueueProducerObject) Start() {
+func (q *QueueProducerObject) Start() error {
 	if q.queue == nil {
-		q.logFunc(util.InfoLvl, "cannot find queue source")
+		return fmt.Errorf("cannot find queue source")
 	}
 	if q.diskQueue != nil {
-		go q.startBackendLoop()
+		err := q.diskQueue.Start()
+		if err != nil {
+			return err
+		}
+		q.waitGroup.Wrap(q.startBackendLoop)
 	}
+	return nil
 }
 
 /**
@@ -143,8 +134,11 @@ func (q *QueueProducerObject) Stop() {
 	q.Lock()
 	defer q.Unlock()
 	close(q.exitChan)
+	q.waitGroup.Wait()
+	if q.queue != nil {
+		q.queue.Stop()
+	}
 	q.diskQueue.Stop()
-	q.queue.Stop()
 }
 
 /**
@@ -197,6 +191,14 @@ func (q *QueueProducerObject) DisableRateLimit() {
 * 发送消息
  */
 func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println(err)
+			if _, ok := err.(error); ok {
+				q.logFunc(util.ErrorLvl, "send message panic error:"+err.(error).Error())
+			}
+		}
+	}()
 	var addBackendStore bool = false
 	var err error
 	if async {
@@ -212,7 +214,7 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 				err = q.queue.SendMessage(data)
 				if err != nil {
 					//触发队列检测
-					q.logFunc(util.ErrorLvl, "add message error:"+err.Error())
+					q.logFunc(util.ErrorLvl, "send message error:"+err.Error())
 					q.checkQueueChan <- 1
 					addBackendStore = true
 				}
@@ -236,36 +238,25 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
  */
 func (q *QueueProducerObject) startBackendLoop() {
 	checkQueueTicker := time.NewTicker(CHECK_QUEUE_TIMEOUT) //监测队列链接是否正常
-	var pipelineQueue backend.PipelineQueueProducer
+	q.pauseChan = make(chan bool)
 	var pause bool = false
 	var r chan []byte
-	var err error
-	q.pauseChan = make(chan bool)
+	queueChannel := q.createDataChannel()
+	if queueChannel.Start() {
+		//channel启动成功,则直接开始读取传输数据
+		r = q.diskQueue.GetMessageChan()
+	}
 	for {
 		select {
 		case dataByte := <-r:
-			if pipelineQueue == nil {
-				pipelineQueue, err = q.queue.StartPipeline()
+			if q.rateController != nil {
+				//等待限速
+				q.rateController.Assign(true)
 			}
-			if err != nil {
-				//创建pipeline队列失败,则直接禁止读取disk queue
-				q.diskQueue.SendMessage(dataByte)
-				pipelineQueue = nil
+			if !queueChannel.Send(channel.Data{Value: string(dataByte)}) {
+				q.logFunc(util.InfoLvl, "channel queue is full capacity")
+				//发送失败,说明channel队列容量已满,尝试延迟重试
 				r = nil
-			}
-			if pipelineQueue != nil {
-				if q.rateController != nil {
-					//等待限速
-					q.rateController.Assign(true)
-				}
-				err := pipelineQueue.SendMessage(dataByte)
-				if err != nil {
-					q.logFunc(util.ErrorLvl, "backend flush message error:"+err.Error())
-					q.withRecover(func() {
-						pipelineQueue.Stop()
-					})
-					pipelineQueue = nil
-				}
 			}
 		case <-checkQueueTicker.C:
 			if pause {
@@ -273,22 +264,18 @@ func (q *QueueProducerObject) startBackendLoop() {
 			}
 			if q.queue != nil {
 				if q.queue.CheckActive() {
-					//强制关闭一次pipeline queue
-					if pipelineQueue != nil {
-						q.withRecover(func() {
-							pipelineQueue.Stop()
-						})
-					}
-
 					q.logFunc(util.DebugLvl, "checked connected successed")
-					if r == nil {
-						r = q.diskQueue.GetMessageChan()
+					if queueChannel.Start() {
+						//channel启动成功,则直接开始读取传输数据
+						if r == nil {
+							r = q.diskQueue.GetMessageChan()
+						}
 					}
 				} else {
 					q.logFunc(util.InfoLvl, "checked connected failed")
+					queueChannel.Pause()
 					r = nil
 				}
-				pipelineQueue = nil
 			}
 		case <-q.checkQueueChan:
 			if pause {
@@ -296,36 +283,19 @@ func (q *QueueProducerObject) startBackendLoop() {
 			}
 			if q.queue != nil && q.queue.IsActive() {
 				//主动发起的队列检测，仅当queue is active时才触发
-				if q.queue.CheckActive() {
-					q.logFunc(util.DebugLvl, "checked connected successed")
-					if r == nil {
-						r = q.diskQueue.GetMessageChan()
-					}
-				} else {
+				if !q.queue.CheckActive() {
 					q.logFunc(util.InfoLvl, "checked connected failed")
-					if pipelineQueue != nil {
-						pipelineQueue = nil
-					}
+					queueChannel.Pause()
 					r = nil
 				}
 			}
 		case pause = <-q.pauseChan:
-			if pipelineQueue != nil {
-				q.withRecover(func() {
-					pipelineQueue.Stop()
-				})
-				pipelineQueue = nil
-			}
 			if pause {
-				//禁止从 diskQueue 读数据
+				//禁止从 diskQueue 读数据,queueChannel消费正常
 				r = nil
 			}
 		case <-q.exitChan:
-			if pipelineQueue != nil {
-				q.withRecover(func() {
-					pipelineQueue.Stop()
-				})
-			}
+			queueChannel.Stop()
 			goto exit
 		}
 	}
@@ -333,28 +303,41 @@ exit:
 	checkQueueTicker.Stop()
 }
 
-func (q *QueueProducerObject) withRecover(handler func()) {
-	defer func() {
-		if err := recover(); err != nil {
-			if _, ok := err.(error); ok {
-				q.logFunc(util.ErrorLvl, err.(error).Error())
-			}
-		}
-	}()
-	handler()
-}
-
-func createDiskQueue(topicName string, config config.DiskConfig) (*backend.DiskQueue, error) {
-	diskQueue := backend.NewDiskQueue(config)
-	diskQueue.SetTopic(topicName)
-	err := diskQueue.Start()
-	if err != nil {
-		return nil, err
+/**
+* 创建数据传输管道(channel)
+ */
+func (q *QueueProducerObject) createDataChannel() *channel.Channel {
+	workerNum := q.config.ChannelConfig.WorkerNum
+	if workerNum == 0 {
+		workerNum = channel.DEFAULT_CHANNEL_WORKER_NUM
 	}
-	return diskQueue, nil
+	cfg := q.config.ChannelConfig
+	cfg.Transaction.FtLogPath = q.diskQueue.GetDataPath()
+	channel := channel.NewDataChannel(cfg, func(item channel.Data) {
+		q.diskQueue.SendMessage([]byte(item.Value))
+	}, nil, q.logFunc)
+	for i := 0; i < workerNum; i++ {
+		sender := backend.NewBatchProducer(func() (backend.BatchQueueProducer, error) {
+			if q.queue == nil {
+				return nil, fmt.Errorf("backend queue producer has not been init")
+			}
+			return q.queue.StartBatchProducer()
+		})
+		channel.AddSender(sender)
+	}
+	return channel
 }
 
-func createQueueProducer(cfg config.QueueConfig) QueueProducer {
+/**
+* 创建本地磁盘队列
+ */
+func createDiskQueue(topicName string, config config.DiskConfig) *queue.DiskQueue {
+	diskQueue := queue.NewDiskQueue(config)
+	diskQueue.SetTopic(topicName)
+	return diskQueue
+}
+
+func createQueueProducer(cfg config.QueueConfig) backend.QueueProducer {
 	if cfg.Type == config.TYPE_REDIS {
 		return backend.NewRedisQueueProducer(cfg.Attr)
 	}

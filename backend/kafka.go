@@ -10,8 +10,6 @@ import (
 	"github.com/jolestar/go-commons-pool"
 )
 
-const KAFKA_POOL_IDLE_TIMEOUT = 60 * 10
-
 type KafkaPoolFactory struct {
 	addr    string
 	timeout time.Duration
@@ -29,8 +27,9 @@ type KafkaQueueProducer struct {
 }
 
 type KafkaAsyncProducer struct {
-	producer sarama.AsyncProducer
-	topic    string
+	lastSendMsg *sarama.ProducerMessage
+	producer    sarama.SyncProducer
+	topic       string
 }
 
 func (f *KafkaPoolFactory) MakeObject() (*pool.PooledObject, error) {
@@ -76,8 +75,10 @@ func createKafkaQueuePool(config config.QueueAttrConfig) *pool.ObjectPool {
 	}
 	cfg := pool.NewDefaultPoolConfig()
 	cfg.MaxIdle = config.PoolSize
-	cfg.MinEvictableIdleTimeMillis = 1000 * KAFKA_POOL_IDLE_TIMEOUT //10分钟空闲时间
-	return pool.NewObjectPool(poolFactory, cfg)
+	cfg.MinEvictableIdleTimeMillis = 1000 * DEFAULT_QUEUE_IDLE_TIMEOUT //10分钟空闲时间
+	abandonedCfg := pool.NewDefaultAbandonedConfig()
+	abandonedCfg.RemoveAbandonedTimeout = 1000 * DEFAULT_QUEUE_ABANDON_TIMEOUT //10分钟未
+	return pool.NewObjectPoolWithAbandonedConfig(poolFactory, cfg, abandonedCfg)
 }
 
 func newKafkaQueue(config config.QueueAttrConfig) kafkaQueue {
@@ -119,13 +120,17 @@ func (q *kafkaQueue) createTopic() error {
 		TopicDetails: make(map[string]*sarama.TopicDetail),
 	}
 	var partitionNum int32 = 1
+	var replicationNum int16 = 1
 	if _, ok := q.config.Attr["partition_num"]; ok {
 		partitionNum = int32(q.config.Attr["partition_num"].(int))
+	}
+	if _, ok := q.config.Attr["replication_num"]; ok {
+		replicationNum = int16(q.config.Attr["replication_num"].(int))
 	}
 	req.TopicDetails[q.topic] = &sarama.TopicDetail{
 		//默认副本数均为1
 		NumPartitions:     partitionNum,
-		ReplicationFactor: 1,
+		ReplicationFactor: replicationNum,
 	}
 	res, err := broker.CreateTopics(&req)
 	if err != nil {
@@ -180,28 +185,12 @@ func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(data))}
 	_, _, err = producer.SendMessage(msg)
 	if err != nil {
-		//出错即关闭链接
+		//出错则destory池内链接
 		q.pool.InvalidateObject(obj)
-		producer.Close()
 		return err
 	}
 	defer q.pool.ReturnObject(producer)
 	return nil
-}
-
-func (q *KafkaQueueProducer) StartPipeline() (PipelineQueueProducer, error) {
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V1_0_0_0
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
-	producer, err := sarama.NewAsyncProducer([]string{q.config.Bind}, cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &KafkaAsyncProducer{
-		producer: producer,
-		topic:    q.topic,
-	}, nil
 }
 
 /*
@@ -212,23 +201,38 @@ func (q *KafkaQueueProducer) Stop() error {
 	return nil
 }
 
-func (q *KafkaAsyncProducer) SendMessage(log []byte) error {
-	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(log))}
-	for {
-		select {
-		case q.producer.Input() <- msg:
-			return nil
-		case <-q.producer.Successes():
-			//上一次的成功请求,本次发送依然要继续
-			continue
-		case err := <-q.producer.Errors():
-			return err
-		}
+func (q *KafkaQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
+	timeout := time.Duration(q.config.Timeout) * time.Second
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V1_0_0_0
+	cfg.Net.DialTimeout = timeout
+	cfg.Net.WriteTimeout = timeout
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
+	producer, err := sarama.NewSyncProducer([]string{q.config.Bind}, cfg)
+	if err != nil {
+		return nil, err
 	}
+	return &KafkaAsyncProducer{
+		producer: producer,
+		topic:    q.topic,
+	}, nil
 }
 
-func (q *KafkaAsyncProducer) Flush() error {
-	return nil
+func (q *KafkaAsyncProducer) Topic() string {
+	return q.topic
+}
+
+/**
+* 批量发送kafka 消息
+ */
+func (q *KafkaAsyncProducer) SendMessages(items [][]byte) error {
+	msgList := make([]*sarama.ProducerMessage, 0)
+	for _, item := range items {
+		msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.ByteEncoder(item)}
+		msgList = append(msgList, msg)
+	}
+	return q.producer.SendMessages(msgList)
 }
 
 func (q *KafkaAsyncProducer) Stop() error {
