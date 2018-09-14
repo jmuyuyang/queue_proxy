@@ -47,12 +47,9 @@ type Sender interface {
 * onMetaSync 元数据同步方法
  */
 func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onMetaSync func(item Data), logf util.LoggerFuncHandler) *Channel {
-	queueSize := cfg.Size
-	if queueSize == 0 {
-		queueSize = DEFAULT_CHANNEL_SIZE
-	}
+	cfg = initChannelConfig(cfg)
 	return &Channel{
-		queue: queue.NewBoundedQueue(queueSize, func(item interface{}) {
+		queue: queue.NewBoundedQueue(cfg.Size, func(item interface{}) {
 			onDroppedItem(item.(Data))
 		}),
 		transManager: NewTransactionManager(cfg.Transaction, onMetaSync, logf),
@@ -98,6 +95,13 @@ func (q *Channel) IsStopped() bool {
  */
 func (q *Channel) AddSender(sender Sender) {
 	q.senderList = append(q.senderList, sender)
+}
+
+/**
+* 清除已有sender
+ */
+func (q *Channel) ClearSenderList() {
+	q.senderList = make([]Sender, 0)
 }
 
 /**
@@ -186,4 +190,27 @@ func (q *Channel) Stop() {
 		}
 		q.transManager.Stop()
 	}
+}
+
+/**
+* 初始化channel 配置
+ */
+func initChannelConfig(cfg config.ChannelConfig) config.ChannelConfig {
+	if cfg.Size == 0 {
+		cfg.Size = DEFAULT_CHANNEL_SIZE
+	}
+	if cfg.Transaction.BatchLen == 0 {
+		cfg.Transaction.BatchLen = DEFAULT_CHANNEL_TRANSACTION_LEN
+	}
+	if cfg.Transaction.BatchInterval == 0 {
+		cfg.Transaction.BatchInterval = DEFAULT_CHANNEL_TRANSACTION_TIMEOUT
+	}
+	if cfg.Transaction.CommitTimeout == 0 {
+		cfg.Transaction.CommitTimeout = DEFAULT_CHANNEL_TRANSACTION_COMMIT_TIMEOUT
+	}
+	if cfg.Size < cfg.Transaction.BatchLen {
+		//channel size最小为一个batch size
+		cfg.Size = cfg.Transaction.BatchLen
+	}
+	return cfg
 }

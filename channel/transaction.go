@@ -57,15 +57,6 @@ func (t *TransactionBatch) LastData() Data {
 }
 
 func NewTransactionManager(cfg config.TransactionConfig, onMetaSync func(item Data), logf util.LoggerFuncHandler) *TransactionManager {
-	if cfg.BatchLen == 0 {
-		cfg.BatchLen = DEFAULT_CHANNEL_TRANSACTION_LEN
-	}
-	if cfg.BatchInterval == 0 {
-		cfg.BatchInterval = DEFAULT_CHANNEL_TRANSACTION_TIMEOUT
-	}
-	if cfg.CommitTimeout == 0 {
-		cfg.CommitTimeout = DEFAULT_CHANNEL_TRANSACTION_COMMIT_TIMEOUT
-	}
 	diskCfg := config.DiskConfig{
 		Path:         cfg.FtLogPath,
 		FlushTimeout: 2,
