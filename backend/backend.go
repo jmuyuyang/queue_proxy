@@ -3,9 +3,14 @@ package backend
 import (
 	"time"
 
+	"sync"
+
 	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/util"
+	metrics "github.com/rcrowley/go-metrics"
 )
+
+var doOnce sync.Once
 
 const (
 	ClientIDLength = 16
@@ -13,6 +18,13 @@ const (
 	DEFAULT_QUEUE_IDLE_TIMEOUT    = 60 * 10
 	DEFAULT_QUEUE_ABANDON_TIMEOUT = 60 * 10
 )
+
+func init() {
+	doOnce.Do(func() {
+		//禁用kafka等队列库自带的metric统计
+		metrics.UseNilMetrics = true
+	})
+}
 
 /*
 type MessageID string
