@@ -93,6 +93,9 @@ func (q *BoundedQueue) Stop() {
 	close(q.items)
 	if q.onDroppedItem != nil {
 		for item := range q.items {
+			if item == nil {
+				break
+			}
 			q.onDroppedItem(item)
 		}
 	}
