@@ -48,6 +48,7 @@ type QueueAttrConfig struct {
 
 type DiskConfig struct {
 	Path         string `yaml:"path"`
+	BufferSize   int    `yaml:"buffer_size"`
 	FlushTimeout int    `yaml:"flush_timeout"`
 	CompressType string `yaml:"compress_type"`
 }

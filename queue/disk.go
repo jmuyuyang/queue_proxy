@@ -52,7 +52,6 @@ type DiskQueue struct {
 
 func NewDiskQueue(cfg config.DiskConfig) *DiskQueue {
 	d := DiskQueue{
-		writeChan:       make(chan []byte),
 		readChan:        make(chan []byte),
 		exitChan:        make(chan int),
 		exitSyncChan:    make(chan int),
@@ -63,6 +62,11 @@ func NewDiskQueue(cfg config.DiskConfig) *DiskQueue {
 		dataPath:        cfg.Path,
 		syncTimeout:     time.Duration(cfg.FlushTimeout) * time.Second,
 		needSync:        false,
+	}
+	if cfg.BufferSize > 0 {
+		d.writeChan = make(chan []byte, cfg.BufferSize)
+	} else {
+		d.writeChan = make(chan []byte)
 	}
 	switch cfg.CompressType {
 	case "gzip":
@@ -184,6 +188,13 @@ func (d *DiskQueue) ioLoop() {
 		case <-syncTicker.C:
 			d.needSync = true
 		case <-d.exitChan:
+			close(d.writeChan)
+			for data := range d.writeChan {
+				if len(data) == 0 {
+					break
+				}
+				d.writeOne(data)
+			}
 			//退出时进行一次meta data同步
 			d.sync()
 			goto exit
