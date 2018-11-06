@@ -48,10 +48,14 @@ type Sender interface {
  */
 func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onMetaSync func(item Data), logf util.LoggerFuncHandler) *Channel {
 	cfg = initChannelConfig(cfg)
-	return &Channel{
-		queue: queue.NewBoundedQueue(cfg.Size, func(item interface{}) {
+	var droppedItemFunc func(interface{})
+	if onDroppedItem != nil {
+		droppedItemFunc = func(item interface{}) {
 			onDroppedItem(item.(Data))
-		}),
+		}
+	}
+	return &Channel{
+		queue:        queue.NewBoundedQueue(cfg.Size, droppedItemFunc),
 		transManager: NewTransactionManager(cfg.Transaction, onMetaSync, logf),
 		senderList:   make([]Sender, 0),
 		logf:         logf,
