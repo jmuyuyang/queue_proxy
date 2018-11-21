@@ -182,7 +182,7 @@ func (q *KafkaQueueProducer) SendMessage(data []byte) error {
 		return err
 	}
 	producer := obj.(sarama.SyncProducer)
-	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.StringEncoder(string(data))}
+	msg := &sarama.ProducerMessage{Topic: q.topic, Value: sarama.ByteEncode(data)}
 	_, _, err = producer.SendMessage(msg)
 	if err != nil {
 		//出错则destory池内链接
