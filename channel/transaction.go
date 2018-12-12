@@ -63,9 +63,8 @@ func NewTransactionManager(cfg config.TransactionConfig, onMetaSync func(item Da
 		FlushTimeout: 2,
 		CompressType: "gzip",
 	}
-	var bq *queue.DiskQueue = queue.NewDiskQueue(diskCfg)
+	var bq *queue.DiskQueue = queue.NewDiskQueue(diskCfg, logf)
 	bq.SetTopic("channel")
-	bq.SetLogger(logf)
 	bq.Start()
 	return &TransactionManager{
 		cfg:              cfg,

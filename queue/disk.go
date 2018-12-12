@@ -50,7 +50,7 @@ type DiskQueue struct {
 	logf            util.LoggerFuncHandler
 }
 
-func NewDiskQueue(cfg config.DiskConfig) *DiskQueue {
+func NewDiskQueue(cfg config.DiskConfig, logf util.LoggerFuncHandler) *DiskQueue {
 	d := DiskQueue{
 		readChan:        make(chan []byte),
 		exitChan:        make(chan int),

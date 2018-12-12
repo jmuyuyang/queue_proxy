@@ -54,7 +54,7 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 /**
 * 初始化queue producer
  */
-func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) error {
+func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string, logf util.LoggerFuncHandler) error {
 	if q.config.DiskConfig.Path == "" {
 		return fmt.Errorf("disk queue path must be provide")
 	}
@@ -63,6 +63,7 @@ func (q *QueueProducerObject) InitQueue(name string, topicName string, queueType
 	if err != nil {
 		return err
 	}
+	q.setLogger(logf)
 	q.initDiskQueue(name, q.config.DiskConfig)
 	q.initDataChannel()
 	return nil
@@ -86,11 +87,11 @@ func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName strin
 /**
 * 设置日志记录器
  */
-func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
+func (q *QueueProducerObject) setLogger(logf util.LoggerFuncHandler) {
 	topic := q.GetTopic()
 	q.logFunc = func(level util.LogLevel, message string) {
 		msg := fmt.Sprintf("backend queue topic:%s;%s", topic, message)
-		logger(level, msg)
+		logf(level, msg)
 	}
 }
 
@@ -300,11 +301,8 @@ exit:
 * 初始化磁盘队列
  */
 func (q *QueueProducerObject) initDiskQueue(topicName string, config config.DiskConfig) {
-	q.diskQueue = queue.NewDiskQueue(config)
+	q.diskQueue = queue.NewDiskQueue(config, q.logFunc)
 	q.diskQueue.SetTopic(topicName)
-	if q.logFunc != nil {
-		q.diskQueue.SetLogger(q.logFunc)
-	}
 }
 
 /**
