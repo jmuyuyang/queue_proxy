@@ -10,10 +10,10 @@ var DefaultWindow = 50 * time.Millisecond
 
 // Controller can limit multiple io.Reader(or io.Writer) within specific rate.
 type Controller struct {
+	cond            *sync.Cond
 	capacity        int
 	availableTokens int
 	window          time.Duration
-	cond            *sync.Cond
 	reset           chan int
 	done            chan int
 	enable          int32
@@ -66,7 +66,10 @@ func (self *Controller) SetRateLimit(ratePerSecond int) {
 	self.reset <- capacity
 }
 
-func (self *Controller) Assign(wait bool) bool {
+/**
+* 判断流量发送是否准许
+ */
+func (self *Controller) Permit(wait bool) bool {
 	if atomic.LoadInt32(&self.enable) == 0 {
 		return true
 	}

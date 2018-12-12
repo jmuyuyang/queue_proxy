@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/queue"
+	"github.com/jmuyuyang/queue_proxy/rateio"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
@@ -26,12 +27,14 @@ type Data struct {
 }
 
 type Channel struct {
-	queue        *queue.BoundedQueue
-	transManager *TransactionManager
-	senderList   []Sender
-	logf         util.LoggerFuncHandler
-	exitChan     chan struct{}
-	stopped      int32
+	cfg            config.ChannelConfig
+	queue          *queue.BoundedQueue
+	rateController *rateio.Controller
+	transManager   *TransactionManager
+	senderList     []Sender
+	logf           util.LoggerFuncHandler
+	exitChan       chan struct{}
+	stopped        int32
 }
 
 type Sender interface {
@@ -55,6 +58,7 @@ func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onM
 		}
 	}
 	return &Channel{
+		cfg:          cfg,
 		queue:        queue.NewBoundedQueue(cfg.Size, droppedItemFunc),
 		transManager: NewTransactionManager(cfg.Transaction, onMetaSync, logf),
 		senderList:   make([]Sender, 0),
@@ -62,6 +66,32 @@ func NewDataChannel(cfg config.ChannelConfig, onDroppedItem func(item Data), onM
 		exitChan:     make(chan struct{}),
 		stopped:      int32(1),
 	}
+}
+
+/**
+* 开启/设置流量控制
+ */
+func (q *Channel) SetRateLimit(ratePerSecond int) {
+	if ratePerSecond < q.cfg.Transaction.BatchLen {
+		//至少为1个batch大小/秒
+		ratePerSecond = q.cfg.Transaction.BatchLen
+	}
+	if q.rateController == nil {
+		q.rateController = rateio.NewController(ratePerSecond)
+		q.rateController.Start()
+	} else {
+		q.rateController.SetRateLimit(ratePerSecond)
+	}
+	q.logf(util.InfoLvl, "enable rate limit")
+}
+
+/**
+* 关闭流量控制
+ */
+func (q *Channel) CloseRateLimit() {
+	q.rateController.Stop()
+	q.rateController = nil
+	q.logf(util.InfoLvl, "disable rate limit")
 }
 
 /**
@@ -136,7 +166,7 @@ func (q *Channel) startSenderWorker(sender Sender) {
 					q.transManager.Rollback(tran)
 				} else {
 					q.transManager.Confirm(tran)
-					q.logf(util.DebugLvl, "send batch messages successful")
+					q.logf(util.InfoLvl, "send batch messages successful")
 				}
 			case <-idleTicker.C:
 				sender.IdleCheck()
@@ -149,6 +179,10 @@ func (q *Channel) startSenderWorker(sender Sender) {
 * 发送消息
  */
 func (q *Channel) Send(data Data) bool {
+	if q.rateController != nil {
+		//阻塞等待流控通行
+		q.rateController.Permit(true)
+	}
 	return q.queue.Produce(data, time.Duration(DEFAULT_CHANNEL_TRANSACTION_TIMEOUT)*time.Second)
 }
 

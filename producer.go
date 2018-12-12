@@ -9,7 +9,6 @@ import (
 	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/queue"
-	"github.com/jmuyuyang/queue_proxy/rateio"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
 
@@ -18,16 +17,17 @@ const CHECK_QUEUE_CHAIN_BUFFER = 3
 
 type QueueProducerObject struct {
 	sync.RWMutex
-	Name           string
-	config         config.Config
-	queue          backend.QueueProducer
-	diskQueue      *queue.DiskQueue
-	rateController *rateio.Controller
-	checkQueueChan chan int
-	exitChan       chan int
-	pauseChan      chan bool
-	logFunc        util.LoggerFuncHandler
-	waitGroup      util.WaitGroupWrapper
+	Name            string
+	config          config.Config
+	queue           backend.QueueProducer
+	diskQueue       *queue.DiskQueue
+	dataChannel     *channel.Channel
+	rateLimitEnable bool
+	checkQueueChan  chan int
+	exitChan        chan int
+	pauseChan       chan bool
+	logFunc         util.LoggerFuncHandler
+	waitGroup       util.WaitGroupWrapper
 }
 
 /*
@@ -42,10 +42,11 @@ func ParseConfigFile(cfgFile string) (config.Config, error) {
  */
 func NewQueueProducer(config config.Config) *QueueProducerObject {
 	senderObj := &QueueProducerObject{
-		config:         config,
-		checkQueueChan: make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
-		exitChan:       make(chan int),
-		logFunc:        func(level util.LogLevel, message string) {},
+		config:          config,
+		checkQueueChan:  make(chan int, CHECK_QUEUE_CHAIN_BUFFER),
+		exitChan:        make(chan int),
+		logFunc:         func(level util.LogLevel, message string) {},
+		rateLimitEnable: false,
 	}
 	return senderObj
 }
@@ -54,11 +55,17 @@ func NewQueueProducer(config config.Config) *QueueProducerObject {
 * 初始化queue producer
  */
 func (q *QueueProducerObject) InitQueue(name string, topicName string, queueTypeName string) error {
-	q.Name = name
-	if q.config.DiskConfig.Path != "" {
-		q.diskQueue = createDiskQueue(name, q.config.DiskConfig)
+	if q.config.DiskConfig.Path == "" {
+		return fmt.Errorf("disk queue path must be provide")
 	}
-	return q.setQueueAttr(queueTypeName, topicName)
+	q.Name = name
+	err := q.setQueueAttr(queueTypeName, topicName)
+	if err != nil {
+		return err
+	}
+	q.initDiskQueue(name, q.config.DiskConfig)
+	q.initDataChannel()
+	return nil
 }
 
 /*
@@ -77,6 +84,17 @@ func (q *QueueProducerObject) setQueueAttr(queueTypeName string, topicName strin
 }
 
 /**
+* 设置日志记录器
+ */
+func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
+	topic := q.GetTopic()
+	q.logFunc = func(level util.LogLevel, message string) {
+		msg := fmt.Sprintf("backend queue topic:%s;%s", topic, message)
+		logger(level, msg)
+	}
+}
+
+/**
 * 设置queue topic
  */
 func (q *QueueProducerObject) SetTopic(topicName string) {
@@ -86,17 +104,6 @@ func (q *QueueProducerObject) SetTopic(topicName string) {
 		q.doPause(true)
 		q.queue.SetTopic(topicName)
 		q.doPause(false)
-	}
-}
-
-func (q *QueueProducerObject) SetLogger(logger util.LoggerFuncHandler) {
-	topic := q.GetTopic()
-	q.logFunc = func(level util.LogLevel, message string) {
-		msg := fmt.Sprintf("backend queue topic:%s;%s", topic, message)
-		logger(level, msg)
-	}
-	if q.diskQueue != nil {
-		q.diskQueue.SetLogger(q.logFunc)
 	}
 }
 
@@ -114,16 +121,14 @@ func (q *QueueProducerObject) GetTopic() string {
 * disk queue 启动
  */
 func (q *QueueProducerObject) Start() error {
-	if q.queue == nil {
+	if q.queue == nil || q.diskQueue == nil {
 		return fmt.Errorf("cannot find queue source")
 	}
-	if q.diskQueue != nil {
-		err := q.diskQueue.Start()
-		if err != nil {
-			return err
-		}
-		q.waitGroup.Wrap(q.startBackendLoop)
+	err := q.diskQueue.Start()
+	if err != nil {
+		return err
 	}
+	q.waitGroup.Wrap(q.startBackendLoop)
 	return nil
 }
 
@@ -135,9 +140,7 @@ func (q *QueueProducerObject) Stop() {
 	defer q.Unlock()
 	close(q.exitChan)
 	q.waitGroup.Wait()
-	if q.queue != nil {
-		q.queue.Stop()
-	}
+	q.queue.Stop()
 	q.diskQueue.Stop()
 }
 
@@ -158,18 +161,14 @@ func (q *QueueProducerObject) doPause(pause bool) {
 * 设置限速
  */
 func (q *QueueProducerObject) SetRateLimit(ratePerSecond int) {
-	q.doPause(true)
-	if ratePerSecond == 0 {
+	if ratePerSecond == 0 || q.dataChannel == nil {
 		return
 	}
-	if q.rateController == nil {
-		q.Lock()
-		q.rateController = rateio.NewController(ratePerSecond)
-		q.rateController.Start()
-		q.Unlock()
-	} else {
-		q.rateController.SetRateLimit(ratePerSecond)
-	}
+	q.Lock()
+	defer q.Unlock()
+	q.doPause(true)
+	q.dataChannel.SetRateLimit(ratePerSecond)
+	q.rateLimitEnable = true
 	q.doPause(false)
 }
 
@@ -177,12 +176,12 @@ func (q *QueueProducerObject) SetRateLimit(ratePerSecond int) {
 * 关闭限速
  */
 func (q *QueueProducerObject) DisableRateLimit() {
-	if q.rateController != nil {
+	if q.dataChannel != nil && q.rateLimitEnable {
 		q.Lock()
 		defer q.Unlock()
 		q.doPause(true)
-		q.rateController.Stop()
-		q.rateController = nil
+		q.dataChannel.CloseRateLimit()
+		q.rateLimitEnable = false
 		q.doPause(false)
 	}
 }
@@ -193,7 +192,6 @@ func (q *QueueProducerObject) DisableRateLimit() {
 func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Println(err)
 			if _, ok := err.(error); ok {
 				q.logFunc(util.ErrorLvl, "send message panic error:"+err.(error).Error())
 			}
@@ -207,8 +205,8 @@ func (q *QueueProducerObject) SendMessage(data []byte, async bool) error {
 		q.RLock()
 		addBackendStore = false
 		if q.queue != nil && q.queue.IsActive() {
-			if q.rateController != nil && !q.rateController.Assign(false) {
-				//超过限速
+			if q.rateLimitEnable {
+				//开启流控,则直接开启异步发送模式
 				addBackendStore = true
 			} else {
 				err = q.queue.SendMessage(data)
@@ -241,19 +239,14 @@ func (q *QueueProducerObject) startBackendLoop() {
 	q.pauseChan = make(chan bool)
 	var pause bool = false
 	var r chan []byte
-	queueChannel := q.createDataChannel()
-	if queueChannel.Start() {
+	if q.dataChannel.Start() {
 		//channel启动成功,则直接开始读取传输数据
 		r = q.diskQueue.GetMessageChan()
 	}
 	for {
 		select {
 		case dataByte := <-r:
-			if q.rateController != nil {
-				//等待限速
-				q.rateController.Assign(true)
-			}
-			if !queueChannel.Send(channel.Data{Value: string(dataByte)}) {
+			if !q.dataChannel.Send(channel.Data{Value: string(dataByte)}) {
 				q.logFunc(util.InfoLvl, "channel queue is full capacity")
 				//发送失败,说明channel队列容量已满,尝试延迟重试
 				r = nil
@@ -265,7 +258,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 			if q.queue != nil {
 				if q.queue.CheckActive() {
 					q.logFunc(util.DebugLvl, "checked connected successed")
-					if queueChannel.Start() {
+					if q.dataChannel.Start() {
 						//channel启动成功,则直接开始读取传输数据
 						if r == nil {
 							r = q.diskQueue.GetMessageChan()
@@ -273,7 +266,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 					}
 				} else {
 					q.logFunc(util.InfoLvl, "checked connected failed")
-					queueChannel.Pause()
+					q.dataChannel.Pause()
 					r = nil
 				}
 			}
@@ -285,7 +278,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 				//主动发起的队列检测，仅当queue is active时才触发
 				if !q.queue.CheckActive() {
 					q.logFunc(util.InfoLvl, "checked connected failed")
-					queueChannel.Pause()
+					q.dataChannel.Pause()
 					r = nil
 				}
 			}
@@ -295,7 +288,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 				r = nil
 			}
 		case <-q.exitChan:
-			queueChannel.Stop()
+			q.dataChannel.Stop()
 			goto exit
 		}
 	}
@@ -304,9 +297,20 @@ exit:
 }
 
 /**
-* 创建数据传输管道(channel)
+* 初始化磁盘队列
  */
-func (q *QueueProducerObject) createDataChannel() *channel.Channel {
+func (q *QueueProducerObject) initDiskQueue(topicName string, config config.DiskConfig) {
+	q.diskQueue = queue.NewDiskQueue(config)
+	q.diskQueue.SetTopic(topicName)
+	if q.logFunc != nil {
+		q.diskQueue.SetLogger(q.logFunc)
+	}
+}
+
+/**
+* 初始化数据传输管道(channel)
+ */
+func (q *QueueProducerObject) initDataChannel() {
 	workerNum := q.config.ChannelConfig.WorkerNum
 	if workerNum == 0 {
 		workerNum = channel.DEFAULT_CHANNEL_WORKER_NUM
@@ -325,16 +329,7 @@ func (q *QueueProducerObject) createDataChannel() *channel.Channel {
 		})
 		channel.AddSender(sender)
 	}
-	return channel
-}
-
-/**
-* 创建本地磁盘队列
- */
-func createDiskQueue(topicName string, config config.DiskConfig) *queue.DiskQueue {
-	diskQueue := queue.NewDiskQueue(config)
-	diskQueue.SetTopic(topicName)
-	return diskQueue
+	q.dataChannel = channel
 }
 
 func createQueueProducer(cfg config.QueueConfig) backend.QueueProducer {
