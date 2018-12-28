@@ -62,6 +62,7 @@ func NewDiskQueue(cfg config.DiskConfig, logf util.LoggerFuncHandler) *DiskQueue
 		dataPath:        cfg.Path,
 		syncTimeout:     time.Duration(cfg.FlushTimeout) * time.Second,
 		needSync:        false,
+		logf:            logf,
 	}
 	if cfg.BufferSize > 0 {
 		d.writeChan = make(chan []byte, cfg.BufferSize)
@@ -75,13 +76,12 @@ func NewDiskQueue(cfg config.DiskConfig, logf util.LoggerFuncHandler) *DiskQueue
 	return &d
 }
 
+/**
+* 设置diskqueue topic
+ */
 func (d *DiskQueue) SetTopic(topicName string) {
 	d.name = topicName
 	d.dataPath = path.Join(d.dataPath, "_topic_"+d.name)
-}
-
-func (d *DiskQueue) SetLogger(logger util.LoggerFuncHandler) {
-	d.logf = logger
 }
 
 /**
