@@ -29,7 +29,6 @@ type TransactionManager struct {
 
 type TransactionBatch struct {
 	Id        string    `json:"id"`
-	BatchSize int64     `json:"-"`
 	Retry     int       `json:"retry"`
 	Buffer    []Data    `json:"datas"`
 	StartTime time.Time `json:"-"`
@@ -47,7 +46,6 @@ func (t *TransactionBatch) MarshalJson() ([]byte, error) {
  */
 func (t *TransactionBatch) Append(data Data) {
 	t.Buffer = append(t.Buffer, data)
-	t.BatchSize += int64(len(data.Value))
 }
 
 /**
@@ -206,10 +204,6 @@ func (t *TransactionManager) needCommitTran(tran TransactionBatch) bool {
 
 	if len(tran.Buffer) >= t.cfg.BatchLen {
 		//批次长度超限制
-		return true
-	}
-	if tran.BatchSize >= DEFAULT_CHANNEL_TRANSACTION_SIZE {
-		//批次大小超限制
 		return true
 	}
 	if time.Now().Sub(tran.StartTime).Seconds() > float64(t.cfg.BatchInterval) {

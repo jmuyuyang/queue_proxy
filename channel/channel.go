@@ -14,16 +14,17 @@ const (
 	DEFAULT_CHANNEL_SIZE       = 100
 	DEFAULT_CHANNEL_WORKER_NUM = 1
 
-	DEFAULT_CHANNEL_TRANSACTION_LEN            = 100    //最大一个batch100条
-	DEFAULT_CHANNEL_TRANSACTION_SIZE           = 131072 //最大一个batch128KB
+	DEFAULT_CHANNEL_TRANSACTION_LEN = 100 //最大一个batch100条
+	//DEFAULT_CHANNEL_TRANSACTION_SIZE           = 131072 //最大一个batch128KB
 	DEFAULT_CHANNEL_TRANSACTION_TIMEOUT        = 10
 	DEFAULT_CHANNEL_TRANSACTION_COMMIT_TIMEOUT = 10
 )
 
 type Data struct {
-	Gid   string                 `json:"gid"`
-	Value string                 `json:"val"`
-	Meta  map[string]interface{} `json:"-"`
+	Gid    string                 `json:"gid"`
+	Val    string                 `json:"val,omitempty"`
+	AnyVal map[string]interface{} `json:"vals,omitempty"`
+	Meta   map[string]interface{} `json:"-"`
 }
 
 type Channel struct {

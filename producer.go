@@ -247,7 +247,7 @@ func (q *QueueProducerObject) startBackendLoop() {
 	for {
 		select {
 		case dataByte := <-r:
-			if !q.dataChannel.Send(channel.Data{Value: string(dataByte)}) {
+			if !q.dataChannel.Send(channel.Data{Val: string(dataByte)}) {
 				q.logFunc(util.InfoLvl, "channel queue is full capacity")
 				//发送失败,说明channel队列容量已满,尝试延迟重试
 				r = nil
@@ -316,7 +316,7 @@ func (q *QueueProducerObject) initDataChannel() {
 	cfg := q.config.ChannelConfig
 	cfg.Transaction.FtLogPath = q.diskQueue.GetDataPath()
 	channel := channel.NewDataChannel(cfg, func(item channel.Data) {
-		q.diskQueue.SendMessage([]byte(item.Value))
+		q.diskQueue.SendMessage([]byte(item.Val))
 	}, nil, q.logFunc)
 	for i := 0; i < workerNum; i++ {
 		sender := backend.NewBatchProducer(func() (backend.BatchQueueProducer, error) {

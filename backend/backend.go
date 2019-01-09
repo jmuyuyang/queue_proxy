@@ -94,7 +94,7 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 	}
 	msgList := make([][]byte, 0)
 	for _, item := range items {
-		msgList = append(msgList, []byte(item.Value))
+		msgList = append(msgList, []byte(item.Val))
 	}
 	var err error
 	util.WithRecover(func() {
