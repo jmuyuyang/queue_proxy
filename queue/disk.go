@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	MaxBytesPerFile = 1 * 1024 * 1024 * 1024 //最大单文件大小1GB
-	MaxMsgSize      = 10 * 1024 * 1024       //最大单条数据大小10MB
+	MaxBytesPerFile = 200 * 1024 * 1024 //最大单文件大小200MB
+	MaxMsgSize      = 5 * 1024 * 1024   //最大单条数据大小5MB
 )
 
 type Compressor interface {
