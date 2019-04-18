@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/util"
 )
@@ -67,14 +68,14 @@ func (h *HttpQueueProducer) Stop() error {
 是用换行符分割数据
 */
 func (h *HttpBatchQueueProducer) SendMessages(datas [][]byte) error {
-	var buf []byte
+	var buf bytes.Buffer
 	for i, data := range datas {
-		buf = append(buf, data...)
+		buf.Write(data)
 		if i < len(datas)-1 {
-			buf = append(buf, []byte("\n")...)
+			buf.WriteString("\n")
 		}
 	}
-	sendData, err := util.GzipData(buf)
+	sendData, err := util.GzipData(buf.Bytes())
 	if err != nil {
 		return err
 	}
