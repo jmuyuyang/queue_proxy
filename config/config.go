@@ -10,6 +10,7 @@ const (
 	TYPE_REDIS = "redis"
 	TYPE_KAFKA = "kafka"
 	TYPE_MNS   = "mns"
+	TYPE_HTTP  = "http"
 )
 
 type Config struct {

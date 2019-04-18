@@ -331,14 +331,16 @@ func (q *QueueProducerObject) initDataChannel() {
 }
 
 func createQueueProducer(cfg config.QueueConfig) backend.QueueProducer {
-	if cfg.Type == config.TYPE_REDIS {
+	switch cfg.Type {
+	case config.TYPE_REDIS:
 		return backend.NewRedisQueueProducer(cfg.Attr)
-	}
-	if cfg.Type == config.TYPE_KAFKA {
+	case config.TYPE_KAFKA:
 		return backend.NewKafkaQueueProducer(cfg.Attr)
-	}
-	if cfg.Type == config.TYPE_MNS {
+	case config.TYPE_MNS:
 		return backend.NewMnsQueueProducer(cfg.Attr)
+	case config.TYPE_HTTP:
+		return backend.NewHttpQueueProducer(cfg.Attr)
+	default:
+		return nil
 	}
-	return nil
 }
