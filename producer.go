@@ -319,7 +319,7 @@ func (q *QueueProducerObject) initDataChannel() {
 		q.diskQueue.SendMessage([]byte(item.Value))
 	}, nil, q.logFunc)
 	for i := 0; i < workerNum; i++ {
-		sender := backend.NewBatchProducer(func() (backend.BatchQueueProducer, error) {
+		sender := backend.NewBatchProducer(q.logFunc,func() (backend.BatchQueueProducer, error) {
 			if q.queue == nil {
 				return nil, fmt.Errorf("backend queue producer has not been init")
 			}

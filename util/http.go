@@ -25,6 +25,7 @@ http 发送
 */
 
 func DoRequest(url string, body *bytes.Buffer) error {
+
 	req, _ := http.NewRequest("POST", url, body)
 	client := &http.Client{Transport: DefaultTransport}
 	resp, err := client.Do(req)
