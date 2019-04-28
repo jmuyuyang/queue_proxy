@@ -8,10 +8,12 @@ import (
 
 type HttpQueueProducer struct {
 	sendUrl string
+	topic   string
 }
 
 type HttpBatchQueueProducer struct {
 	sendUrl string
+	topic   string
 }
 
 /*
@@ -29,15 +31,15 @@ func NewHttpQueueProducer(config config.QueueAttrConfig) *HttpQueueProducer {
 新建http batch发送器
 */
 func (h *HttpQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
-	return &HttpBatchQueueProducer{sendUrl: h.sendUrl}, nil
+	return &HttpBatchQueueProducer{sendUrl: h.sendUrl, topic: h.topic}, nil
 }
 
 func (h *HttpQueueProducer) SetTopic(topic string) {
-
+	h.topic = topic
 }
 
 func (h *HttpQueueProducer) GetTopic() string {
-	return ""
+	return h.topic
 }
 
 /*
@@ -48,7 +50,7 @@ func (h *HttpQueueProducer) SendMessage(data []byte) error {
 	if err != nil {
 		return err
 	}
-	return util.DoRequest(h.sendUrl, []byte(sendData))
+	return util.DoRequest(h.sendUrl, sendData)
 }
 
 func (h *HttpQueueProducer) CheckActive() bool {
@@ -79,7 +81,7 @@ func (h *HttpBatchQueueProducer) SendMessages(datas [][]byte) error {
 	if err != nil {
 		return err
 	}
-	return util.DoRequest(h.sendUrl, []byte(sendData))
+	return util.DoRequest(h.sendUrl, sendData)
 }
 
 func (h *HttpBatchQueueProducer) Stop() error {
@@ -87,5 +89,5 @@ func (h *HttpBatchQueueProducer) Stop() error {
 }
 
 func (h *HttpBatchQueueProducer) Topic() string {
-	return ""
+	return h.topic
 }

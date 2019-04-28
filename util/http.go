@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -23,10 +24,8 @@ var DefaultTransport *http.Transport = &http.Transport{
 http 发送
 */
 
-func DoRequest(url string, body []byte) error {
-	var resp *http.Response
-	data := bytes.NewBuffer(body)
-	req, _ := http.NewRequest("POST", url, data)
+func DoRequest(url string, body *bytes.Buffer) error {
+	req, _ := http.NewRequest("POST", url, body)
 	client := &http.Client{Transport: DefaultTransport}
 	resp, err := client.Do(req)
 
@@ -39,21 +38,24 @@ func DoRequest(url string, body []byte) error {
 
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "Http status is %d\n", resp.StatusCode)
+		respContent, _ := ioutil.ReadAll(resp.Body)
+		fmt.Fprintf(os.Stderr, "content: %s\n", string(respContent))
 		return errors.New(HTTP_BAD_STATUS)
 	}
 	return nil
 }
 
-func GzipData(data []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-
+/*
+gzip压缩
+*/
+func GzipData(data []byte) (*bytes.Buffer, error) {
+	buf := new(bytes.Buffer)
+	zw := gzip.NewWriter(buf)
 	_, err := zw.Write(data)
 	if err != nil {
 		zw.Close()
 		return nil, err
 	}
 	zw.Close()
-
-	return buf.Bytes(), nil
+	return buf, nil
 }
