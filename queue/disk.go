@@ -164,9 +164,9 @@ func (d *DiskQueue) ioLoop() {
 			}
 			if d.nextReadPos == d.readPos {
 				dataRead, err = d.readOne()
-				d.logf(util.ErrorLvl, d.readFileNum)
+				d.logf(util.ErrorLvl, fmt.Sprintf("%d", d.readFileNum))
 				d.logf(util.ErrorLvl, "read data error "+err.Error())
-				d.logf(util.ErrorLvl, d.readFileNum)
+				d.logf(util.ErrorLvl, fmt.Sprintf("%d", d.readFileNum))
 				if err != nil {
 					d.logf(util.ErrorLvl, err.Error())
 					//读数据错误则立即跳过当前读取的文件
