@@ -2,27 +2,37 @@ package backend
 
 import (
 	"bytes"
+	"context"
 	"github.com/jmuyuyang/queue_proxy/config"
 	"github.com/jmuyuyang/queue_proxy/util"
+	"time"
 )
+
+var defaultHttpTimeout = 15
 
 type HttpQueueProducer struct {
 	sendUrl string
 	topic   string
+	timeout time.Duration
 }
 
 type HttpBatchQueueProducer struct {
 	sendUrl string
 	topic   string
+	timeout time.Duration
 }
 
 /*
 新建http发送器
 */
 func NewHttpQueueProducer(config config.QueueAttrConfig) *HttpQueueProducer {
+	if config.Timeout == 0 {
+		config.Timeout = defaultHttpTimeout
+	}
+	timeout := time.Duration(config.Timeout) * time.Second
 	if sendUrl, ok := config.Attr["send_url"].(string); ok {
 		sendUrl += "?gzip=1"
-		return &HttpQueueProducer{sendUrl: sendUrl}
+		return &HttpQueueProducer{sendUrl: sendUrl, timeout: timeout}
 	}
 	return nil
 }
@@ -31,7 +41,7 @@ func NewHttpQueueProducer(config config.QueueAttrConfig) *HttpQueueProducer {
 新建http batch发送器
 */
 func (h *HttpQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
-	return &HttpBatchQueueProducer{sendUrl: h.sendUrl, topic: h.topic}, nil
+	return &HttpBatchQueueProducer{sendUrl: h.sendUrl, topic: h.topic, timeout: h.timeout}, nil
 }
 
 func (h *HttpQueueProducer) SetTopic(topic string) {
@@ -50,7 +60,8 @@ func (h *HttpQueueProducer) SendMessage(data []byte) error {
 	if err != nil {
 		return err
 	}
-	return util.DoRequest(h.sendUrl, sendData)
+	ctx, _ := context.WithTimeout(context.Background(), h.timeout)
+	return util.DoRequest(h.sendUrl, ctx, sendData)
 }
 
 func (h *HttpQueueProducer) CheckActive() bool {
@@ -81,7 +92,8 @@ func (h *HttpBatchQueueProducer) SendMessages(datas [][]byte) error {
 	if err != nil {
 		return err
 	}
-	return util.DoRequest(h.sendUrl, sendData)
+	ctx, _ := context.WithTimeout(context.Background(), h.timeout)
+	return util.DoRequest(h.sendUrl, ctx, sendData)
 }
 
 func (h *HttpBatchQueueProducer) Stop() error {
