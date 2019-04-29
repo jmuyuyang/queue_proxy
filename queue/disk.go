@@ -223,7 +223,9 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 					}
 				}
 			}
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		if d.readPos > 0 {
