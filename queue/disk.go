@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	MaxBytesPerFile = 200 * 1024 * 1024 //最大单文件大小200MB
+	MaxBytesPerFile = 500 * 1024 * 1024 //最大单文件大小500MB
 	MaxMsgSize      = 5 * 1024 * 1024   //最大单条数据大小5MB
 )
 
