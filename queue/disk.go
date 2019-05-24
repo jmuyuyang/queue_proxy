@@ -210,7 +210,7 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 	var err error
 	var msgSize int32
 
-	if d.readFile == nil {
+	if d.readFile == nil || d.reader == nil {
 		curFileName := d.fileName(d.readFileNum)
 		d.readFile, err = os.OpenFile(curFileName, os.O_RDONLY, 0600)
 		if err != nil {

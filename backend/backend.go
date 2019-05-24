@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"strconv"
 	"time"
 
 	"sync"
@@ -61,15 +62,17 @@ type BatchProducer struct {
 	lastSend            time.Time
 	onProducerConstruct func() (BatchQueueProducer, error)
 	producer            BatchQueueProducer
+	logFunc             util.LoggerFuncHandler
 }
 
 /**
 * 事务发送producer, 失败回滚
  */
-func NewBatchProducer(onProducerConstruct func() (BatchQueueProducer, error)) *BatchProducer {
+func NewBatchProducer(logFunc util.LoggerFuncHandler, onProducerConstruct func() (BatchQueueProducer, error)) *BatchProducer {
 	return &BatchProducer{
 		lastSend:            time.Now(),
 		onProducerConstruct: onProducerConstruct,
+		logFunc:             logFunc,
 	}
 }
 
@@ -98,12 +101,15 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 	}
 	var err error
 	util.WithRecover(func() {
+		startTime := time.Now().UnixNano()
 		err = w.producer.SendMessages(msgList)
 		if err != nil {
 			//批量提交失败则进行一次producer重建
 			w.producer.Stop()
 			w.producer = nil
 		}
+		endTime := time.Now().UnixNano()
+		w.logFunc(util.DebugLvl, "send data take time Millisecond "+strconv.Itoa(int(endTime-startTime)/1e6))
 	}, func(err error) {
 		w.producer = nil
 	})
