@@ -45,6 +45,7 @@ func (h *HttpQueueProducer) StartBatchProducer() (BatchQueueProducer, error) {
 }
 
 func (h *HttpQueueProducer) SetTopic(topic string) {
+	h.sendUrl += "&topic=" + topic
 	h.topic = topic
 }
 

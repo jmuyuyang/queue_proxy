@@ -13,7 +13,7 @@ import (
 
 var DefaultTransport *http.Transport = &http.Transport{
 	Dial: (&net.Dialer{
-		Timeout:   20 * time.Second,
+		Timeout:   5 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}).Dial,
 }
