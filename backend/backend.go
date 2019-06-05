@@ -106,7 +106,10 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 		startTime := time.Now().UnixNano()
 		err = w.producer.SendMessages(msgList)
 		if err != nil {
-			fmt.Println(msgList)
+			fmt.Println(len(msgList))
+			for _,val := range msgList{
+			   fmt.Println(string(val))
+			}
 			//批量提交失败则进行一次producer重建
 			w.producer.Stop()
 			w.producer = nil
@@ -114,6 +117,7 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 		endTime := time.Now().UnixNano()
 		w.logFunc(util.DebugLvl, "send data take time Millisecond "+strconv.Itoa(int(endTime-startTime)/1e6))
 	}, func(err error) {
+		fmt.Println(err)
 		w.producer = nil
 	})
 	w.lastSend = time.Now()
