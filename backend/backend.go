@@ -4,8 +4,9 @@ import (
 	"strconv"
 	"time"
 
-	"sync"
 	"fmt"
+	"sync"
+
 	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/util"
 	metrics "github.com/rcrowley/go-metrics"
@@ -92,8 +93,6 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 	if w.producer == nil {
 		err := w.Start()
 		if err != nil {
-			fmt.Println("hello")
-			fmt.Println(err)
 			return err
 		}
 	}
@@ -106,9 +105,8 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 		startTime := time.Now().UnixNano()
 		err = w.producer.SendMessages(msgList)
 		if err != nil {
-			fmt.Println(len(msgList))
-			for _,val := range msgList{
-			   fmt.Println(string(val))
+			for _, val := range msgList {
+				fmt.Println(len(val))
 			}
 			//批量提交失败则进行一次producer重建
 			w.producer.Stop()
