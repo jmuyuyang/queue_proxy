@@ -150,6 +150,8 @@ func (q *kafkaQueue) createTopic() error {
 * 检测队列是否活跃
  */
 func (q *kafkaQueue) CheckActive() bool {
+        q.active = true
+        return true
 	cfg := sarama.NewConfig()
 	cfg.Version = sarama.V1_0_0_0
 	cfg.Net.DialTimeout = time.Duration(q.config.Timeout) * time.Second
