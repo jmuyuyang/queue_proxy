@@ -92,6 +92,8 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 	if w.producer == nil {
 		err := w.Start()
 		if err != nil {
+			fmt.Println("hello")
+			fmt.Println(err)
 			return err
 		}
 	}
