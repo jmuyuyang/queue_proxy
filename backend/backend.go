@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"sync"
-
+	"fmt"
 	"github.com/jmuyuyang/queue_proxy/channel"
 	"github.com/jmuyuyang/queue_proxy/util"
 	metrics "github.com/rcrowley/go-metrics"
@@ -104,6 +104,7 @@ func (w *BatchProducer) Send(items []channel.Data) error {
 		startTime := time.Now().UnixNano()
 		err = w.producer.SendMessages(msgList)
 		if err != nil {
+			fmt.Println(msgList)
 			//批量提交失败则进行一次producer重建
 			w.producer.Stop()
 			w.producer = nil
