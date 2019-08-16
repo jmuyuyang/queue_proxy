@@ -208,7 +208,7 @@ func (t *TransactionManager) needCommitTran(tran TransactionBatch) bool {
 		//批次长度超限制
 		return true
 	}
-	if tran.BatchSize >= DEFAULT_CHANNEL_TRANSACTION_SIZE {
+	if tran.BatchSize >= t.cfg.BatchDataSize {
 		//批次大小超限制
 		return true
 	}
