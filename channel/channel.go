@@ -250,5 +250,8 @@ func initChannelConfig(cfg config.ChannelConfig) config.ChannelConfig {
 		//channel size最小为一个batch size
 		cfg.Size = cfg.Transaction.BatchLen
 	}
+	if cfg.Transaction.BatchDataSize == 0 {
+		cfg.Transaction.BatchDataSize = DEFAULT_CHANNEL_TRANSACTION_SIZE
+	}
 	return cfg
 }
