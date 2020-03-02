@@ -53,6 +53,7 @@ type DiskConfig struct {
 	BufferSize   int    `yaml:"buffer_size"`
 	FlushTimeout int    `yaml:"flush_timeout"`
 	CompressType string `yaml:"compress_type"`
+	MaxMsgSize   int64  `yaml:"max_msg_size"`
 }
 
 func (c Config) GetQueueConfig(queueName string) QueueConfig {

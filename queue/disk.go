@@ -41,6 +41,7 @@ type DiskQueue struct {
 	readFileNum     int64
 	nextReadFileNum int64
 	maxBytesPerFile int64
+	maxMsgSize      int64
 	reader          *bufio.Reader
 	name            string
 	dataPath        string
@@ -63,11 +64,16 @@ func NewDiskQueue(cfg config.DiskConfig, logf util.LoggerFuncHandler) *DiskQueue
 		syncTimeout:     time.Duration(cfg.FlushTimeout) * time.Second,
 		needSync:        false,
 		logf:            logf,
+		maxMsgSize:      cfg.MaxMsgSize,
 	}
 	if cfg.BufferSize > 0 {
 		d.writeChan = make(chan []byte, cfg.BufferSize)
 	} else {
 		d.writeChan = make(chan []byte)
+	}
+
+	if d.maxMsgSize == 0 {
+		d.maxMsgSize = MaxMsgSize
 	}
 	switch cfg.CompressType {
 	case "gzip":
@@ -208,7 +214,7 @@ exit:
 
 func (d *DiskQueue) readOne() ([]byte, error) {
 	var err error
-	var msgSize int32
+	var msgSize int64
 
 	if d.readFile == nil || d.reader == nil {
 		curFileName := d.fileName(d.readFileNum)
@@ -245,7 +251,7 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 		return nil, err
 	}
 
-	if msgSize < 0 || msgSize > MaxMsgSize {
+	if msgSize < 0 || msgSize > d.maxMsgSize {
 		d.readFile.Close()
 		d.readFile = nil
 		return nil, fmt.Errorf("invalid message read size (%d)", msgSize)
@@ -256,7 +262,7 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 	if err != nil {
 		if err == io.ErrUnexpectedEOF {
 			//修正msgSize
-			msgSize = int32(readBytes)
+			msgSize = int64(readBytes)
 		} else {
 			d.readFile.Close()
 			d.readFile = nil
