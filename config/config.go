@@ -33,6 +33,7 @@ type TransactionConfig struct {
 	CommitTimeout int    `yaml:"commit_timeout"`
 	MaxRetry      int    `yaml:"max_retry"`
 	FailSleep     int    `yaml:"fail_sleep"`
+	MaxMsgSize   int64   `yaml:"max_msg_size"`
 }
 
 type QueueConfig struct {
