@@ -262,7 +262,7 @@ func (d *DiskQueue) readOne() ([]byte, error) {
 	if err != nil {
 		if err == io.ErrUnexpectedEOF {
 			//修正msgSize
-			msgSize = int64(readBytes)
+			msgSize = int32(readBytes)
 		} else {
 			d.readFile.Close()
 			d.readFile = nil
