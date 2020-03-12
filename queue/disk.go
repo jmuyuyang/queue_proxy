@@ -41,7 +41,7 @@ type DiskQueue struct {
 	readFileNum     int64
 	nextReadFileNum int64
 	maxBytesPerFile int64
-	maxMsgSize      int64
+	maxMsgSize      int32
 	reader          *bufio.Reader
 	name            string
 	dataPath        string
@@ -214,7 +214,7 @@ exit:
 
 func (d *DiskQueue) readOne() ([]byte, error) {
 	var err error
-	var msgSize int64
+	var msgSize int32
 
 	if d.readFile == nil || d.reader == nil {
 		curFileName := d.fileName(d.readFileNum)
